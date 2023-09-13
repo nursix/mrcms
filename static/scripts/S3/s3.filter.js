@@ -1168,7 +1168,7 @@ S3.search = {};
                             if (widget.hasClass('multiselect-filter-widget') &&
                                 widget.multiselect('instance')) {
                                 widget.multiselect('refresh');
-                                widget.multiselect('instance').button.hide();
+                                widget.multiselect('instance').$button.hide();
                             } else if (widget.hasClass('groupedopts-filter-widget') &&
                                 widget.groupedopts('instance')) {
                                 widget.groupedopts('refresh');
@@ -1246,7 +1246,7 @@ S3.search = {};
                             } else if (widget.hasClass('multiselect-filter-widget') &&
                                 widget.multiselect('instance')) {
                                 widget.multiselect('refresh');
-                                widget.multiselect('instance').button.show();
+                                widget.multiselect('instance').$button.show();
                             } else {
                                 widget.removeClass('hide').show();
                             }
@@ -2267,7 +2267,7 @@ S3.search = {};
                             if (s3.lastDraftFeature) {
                                 s3.lastDraftFeature.destroy();
                             } else if (s3.draftLayer.features.length > 1) {
-                                // Clear the one from the Current Location in S3LocationSelector
+                                // Clear the one from the Current Location in LocationSelector
                                 s3.draftLayer.features[0].destroy();
                             }
                             // Deactivate Control

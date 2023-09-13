@@ -13,6 +13,8 @@ except ImportError:
     pass
 import s3menus as default
 
+from .helpers import get_default_organisation, get_default_shelter
+
 # =============================================================================
 class S3MainMenu(default.S3MainMenu):
     """ Custom Application Main Menu """
@@ -40,74 +42,46 @@ class S3MainMenu(default.S3MainMenu):
     def menu_modules(cls):
         """ Custom Modules Menu """
 
-        from .helpers import mrcms_default_shelter
-        shelter_id = mrcms_default_shelter()
+        has_permission = current.auth.s3_has_permission
 
-        has_role = current.auth.s3_has_role
-        not_admin = not has_role("ADMIN")
-
-        if not_admin and has_role("SECURITY"):
-            return [
-                MM("Clients", c="security", f="person"),
-                MM("Dashboard", c="cr", f="shelter",
-                   args = [shelter_id, "profile"],
-                   check = shelter_id is not None,
-                   ),
-                #MM("ToDo", c="project", f="task"),
-                MM("Check-In / Check-Out", c="cr", f="shelter",
-                   args = [shelter_id, "check-in"],
-                   check = shelter_id is not None,
-                   ),
-                MM("Confiscation", c="security", f="seized_item"),
-            ]
-
-        elif not_admin and has_role("QUARTIER"):
-            return [
-                MM("Clients", c=("dvr", "cr"), f=("person", "shelter_registration")),
-                MM("Confiscation", c="security", f="seized_item"),
-            ]
-
+        # Single or multiple organisations?
+        if has_permission("create", "org_organisation"):
+            organisation_id = None
         else:
-            if shelter_id:
-                shelter_menu = MM("Shelter", c="cr", f="shelter", args=[shelter_id])
-            else:
-                shelter_menu = MM("Shelters", c="cr", f="shelter")
+            organisation_id = get_default_organisation()
+        if organisation_id:
+            org_menu = MM("Organization", c="org", f="organisation", args=[organisation_id])
+        else:
+            org_menu = MM("Organizations", c="org", f="organisation")
 
-            return [
-                MM("Clients", c=("dvr", "pr")),
-                MM("Event Registration", c="dvr", f="case_event",
-                   m = "register",
-                   p = "create",
-                   # Show only if not authorized to see "Clients"
-                   check = lambda this: not this.preceding()[-1].check_permission(),
-                   ),
-                MM("Food Distribution", c="dvr", f="case_event",
-                   m = "register_food",
-                   p = "create",
-                   # Show only if not authorized to see "Clients"
-                   check = lambda this: not this.preceding()[-2].check_permission(),
-                   ),
-                MM("Food Distribution Statistics", c="dvr", f="case_event",
-                   m = "report",
-                   vars = {"code": "FOOD*"},
-                   restrict = ("FOOD_STATS",),
-                   # Show only if not authorized to see "Clients"
-                   check = lambda this: not this.preceding()[-3].check_permission(),
-                   ),
-                MM("Dashboard", c="cr", f="shelter",
-                   args = [shelter_id, "profile"],
-                   check = shelter_id is not None,
-                   ),
-                shelter_menu,
-                # @ToDO: Move to Dashboard Widget?
-                #MM("Housing Units", c="cr", f="shelter",
-                #   t = "cr_shelter_unit",
-                #   args = [shelter_id, "shelter_unit"],
-                #   check = shelter_id is not None,
-                #   ),
-                #homepage("cr"),
-                MM("Organizations", c="org", f="organisation"),
-                MM("Confiscation", c="security", f="seized_item"),
+        # Single or multiple shelters?
+        if has_permission("create", "cr_shelter"):
+            shelter_id = None
+        else:
+            shelter_id = get_default_shelter()
+        if shelter_id:
+            shelter_menu = MM("Shelter", c="cr", f="shelter", args=[shelter_id])
+        else:
+            shelter_menu = MM("Shelters", c="cr", f="shelter")
+
+        #Clients
+            #dvr/person
+        #Shelter(s)
+            #Shelter if default shelter and not permitted to create shelters else Shelter list
+            #Create if permitted to create shelters
+            #Presence Registration if default shelter
+        #Organisation(s) <= plural if not single or permitted to create orgs
+            #Organisation if default organisation and not permitted to create orgs else Organisation list
+            #Staff
+        #Security <= requires default organisation/shelter
+            #Confiscation
+            #Presence list if default shelter
+
+        return [
+            MM("Clients", c=("dvr", "pr"), f="person"),
+            shelter_menu,
+            org_menu,
+            MM("Security", c="security", f="seized_item"),
             ]
 
     # -------------------------------------------------------------------------
@@ -131,7 +105,7 @@ class S3MainMenu(default.S3MainMenu):
             lang_name = represent_local(code)
             menu_lang(
                 ML(lang_name, translate=False, lang_code=code, lang_name=lang_name)
-            )
+                )
         return menu_lang
 
     # -------------------------------------------------------------------------
@@ -142,7 +116,8 @@ class S3MainMenu(default.S3MainMenu):
         auth = current.auth
         settings = current.deployment_settings
 
-        ADMIN = current.auth.get_system_roles().ADMIN
+        sr = current.auth.get_system_roles()
+        ADMIN = sr.ADMIN
 
         if not auth.is_logged_in():
             request = current.request
@@ -152,12 +127,12 @@ class S3MainMenu(default.S3MainMenu):
                "_next" in request.get_vars:
                 login_next = request.get_vars["_next"]
 
-            self_registration = settings.get_security_self_registration()
+            #self_registration = settings.get_security_self_registration()
             menu_personal = MP()(
-                        MP("Register", c="default", f="user",
-                           m = "register",
-                           check = self_registration,
-                           ),
+                        #MP("Register", c="default", f="user",
+                        #   m = "register",
+                        #   check = self_registration,
+                        #   ),
                         MP("Login", c="default", f="user",
                            m = "login",
                            vars = {"_next": login_next},
@@ -170,15 +145,16 @@ class S3MainMenu(default.S3MainMenu):
                               )
         else:
             s3_has_role = auth.s3_has_role
-            is_org_admin = lambda i: not s3_has_role(ADMIN) and \
-                                     s3_has_role("ORG_ADMIN")
+            is_user_admin = lambda i: \
+                            s3_has_role(sr.ORG_ADMIN, include_admin=False) or \
+                            s3_has_role(sr.ORG_GROUP_ADMIN, include_admin=False)
 
             menu_personal = MP()(
                         MP("Administration", c="admin", f="index",
                            restrict = ADMIN,
                            ),
                         MP("Administration", c="admin", f="user",
-                           check = is_org_admin,
+                           check = is_user_admin,
                            ),
                         MP("Profile", c="default", f="person"),
                         MP("Change Password", c="default", f="user",
@@ -187,7 +163,8 @@ class S3MainMenu(default.S3MainMenu):
                         MP("Logout", c="default", f="user",
                            m = "logout",
                            ),
-            )
+                        )
+
         return menu_personal
 
     # -------------------------------------------------------------------------
@@ -197,10 +174,11 @@ class S3MainMenu(default.S3MainMenu):
         ADMIN = current.auth.get_system_roles().ADMIN
 
         menu_about = MA(c="default")(
-            MA("Help", f="help"),
-            #MA("Contact", f="contact"),
-            MA("Version", f="about", restrict = ADMIN),
-        )
+                MA("Help", f="help"),
+                #MA("Contact", f="contact"),
+                MA("Version", f="about", restrict = ADMIN),
+                )
+
         return menu_about
 
 # =============================================================================
@@ -212,22 +190,29 @@ class S3OptionsMenu(default.S3OptionsMenu):
     def cr():
         """ CR / Shelter Registry """
 
-        from .helpers import mrcms_default_shelter
-        shelter_id = mrcms_default_shelter()
+        # Single or multiple shelters?
+        if current.auth.s3_has_permission("create", "cr_shelter"):
+            shelter_id = None
+        else:
+            shelter_id = get_default_shelter()
+        if shelter_id:
+            shelter_menu = MM("Shelter", c="cr", f="shelter", args=[shelter_id])
+        else:
+            shelter_menu = MM("Shelters", c="cr", f="shelter")
 
         if not shelter_id:
             menu = M(c="cr")(
-                M("Shelters", f="shelter")(
-                    M("Create", m="create"),
-                    ),
-                )
+                        M("Shelters", f="shelter")(
+                            M("Create", m="create"),
+                            ),
+                        )
         else:
 
             #ADMIN = current.auth.get_system_roles().ADMIN
 
             menu = M(c="cr")(
                         M("Shelter", f="shelter", args=[shelter_id])(
-                            M("Dashboard",
+                            M("Overview",
                             args = [shelter_id, "profile"],
                             ),
                             M("Housing Units",
@@ -236,14 +221,14 @@ class S3OptionsMenu(default.S3OptionsMenu):
                             ),
                         ),
                         #M("Room Inspection", f = "shelter", link=False)(
-                        #      M("Register",
-                        #        args = [shelter_id, "inspection"],
-                        #        t = "cr_shelter_inspection",
-                        #        p = "create",
-                        #        ),
-                        #      M("Overview", f = "shelter_inspection"),
-                        #      M("Defects", f = "shelter_inspection_flag"),
+                        #    M("Register",
+                        #      args = [shelter_id, "inspection"],
+                        #      t = "cr_shelter_inspection",
+                        #      p = "create",
                         #      ),
+                        #    M("Overview", f = "shelter_inspection"),
+                        #    M("Defects", f = "shelter_inspection_flag"),
+                        #    ),
                         #M("Administration",
                         #  link = False,
                         #  restrict = (ADMIN, "ADMIN_HEAD"),
@@ -351,10 +336,20 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
         ADMIN = current.session.s3.system_roles.ADMIN
 
+        # Single or multiple organisations?
+        if current.auth.s3_has_permission("create", "org_organisation"):
+            organisation_id = None
+        else:
+            organisation_id = get_default_organisation()
+        if organisation_id:
+            org_menu = M("Organization", c="org", f="organisation", args=[organisation_id])
+        else:
+            org_menu = M("Organizations", c="org", f="organisation")(
+                            M("Create", m="create"),
+                            )
+
         return M(c=("org", "hrm"))(
-                    M("Organizations", f="organisation")(
-                        M("Create", m="create"),
-                    ),
+                    org_menu,
                     M("Organization Groups", f="group")(
                         M("Create", m="create"),
                         ),
@@ -362,7 +357,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
                     M("Administration", link=False, restrict=[ADMIN])(
                         M("Organization Types", f="organisation_type"),
                         ),
-                 )
+                    )
 
     ## -------------------------------------------------------------------------
     #@staticmethod

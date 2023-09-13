@@ -407,6 +407,7 @@ def do_js(minimize,
                      "ui.organizer",
                      "ui.permissions",
                      "ui.pivottable",
+                     "ui.presence",
                      "ui.qrinput",
                      "ui.roles",
                      "ui.sitecheckin",
@@ -431,6 +432,7 @@ def do_js(minimize,
         # java -jar tools/compiler.jar --js jquery.fileupload.js --js_output_file jquery.fileupload.min.js
         for filename in ("tag-it",
                          "spectrum",
+                         "jquery.qtip",
                          ):
             info("Compressing %s.js" % filename)
             in_f = os.path.join("..", filename + ".js")

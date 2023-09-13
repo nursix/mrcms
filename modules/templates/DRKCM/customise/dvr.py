@@ -8,7 +8,7 @@ import datetime
 
 from collections import OrderedDict
 
-from gluon import current, IS_EMPTY_OR, IS_IN_SET, IS_LENGTH
+from gluon import current, IS_EMPTY_OR, IS_FLOAT_IN_RANGE, IS_IN_SET, IS_LENGTH
 from gluon.storage import Storage
 
 from core import FS, IS_ONE_OF
@@ -624,15 +624,22 @@ def configure_inline_responses(person_id,
     if use_theme and settings.get_dvr_response_themes_details():
         # Expose response_action_theme inline
 
-        # Filter action_id in inline response_themes to same beneficiary
-        ltable = s3db.dvr_response_action_theme
-        field = ltable.action_id
-        dbset = db(rtable.person_id == person_id) if person_id else db
-        field.requires = IS_EMPTY_OR(IS_ONE_OF(dbset, "dvr_response_action.id",
-                                               field.represent,
-                                               orderby = ~rtable.start_date,
-                                               sort = False,
-                                               ))
+        if settings.get_dvr_response_themes_efforts():
+            # Cannot edit inline theme details
+            readonly = True
+        else:
+            # Can add and edit inline theme details
+            readonly = False
+
+            # Filter action_id in inline response_themes to same beneficiary
+            ltable = s3db.dvr_response_action_theme
+            field = ltable.action_id
+            dbset = db(rtable.person_id == person_id) if person_id else db
+            field.requires = IS_EMPTY_OR(IS_ONE_OF(dbset, "dvr_response_action.id",
+                                                   field.represent,
+                                                   orderby = ~rtable.start_date,
+                                                   sort = False,
+                                                   ))
 
         # Inline-component
         inline_responses = S3SQLInlineComponent(
@@ -643,8 +650,8 @@ def configure_inline_responses(person_id,
                                           ],
                                 label = T("Themes"),
                                 orderby = "action_id",
+                                readonly = readonly,
                                 )
-
     else:
         # Expose response_action inline
 
@@ -795,24 +802,22 @@ def dvr_case_activity_resource(r, tablename):
         field = table.need_details
         field.readable = field.writable = ui_options_get("activity_need_details")
 
-        # Embed PSS vulnerability
-        # - separate suspected diagnosis / (confirmed) diagnosis
-        if ui_options_get("activity_pss_vulnerability"):
-            vulnerability = S3SQLInlineLink("vulnerability_type",
-                                            label = T("Suspected Diagnosis"),
-                                            field = "vulnerability_type_id",
-                                            selectedList = 5,
-                                            #multiple = False,
-                                            )
-            diagnosis = S3SQLInlineLink("diagnosis",
-                                        label = T("Diagnosis"),
-                                        field = "vulnerability_type_id",
-                                        selectedList = 5,
-                                        #multiple = False,
-                                        )
+        # Embed PSS Diagnoses
+        if ui_options_get("activity_pss_diagnoses"):
+            suspected_diagnosis = S3SQLInlineLink("suspected_diagnosis",
+                                                  label = T("Suspected Diagnosis"),
+                                                  field = "diagnosis_id",
+                                                  selectedList = 5,
+                                                  #multiple = False,
+                                                  )
+            confirmed_diagnosis = S3SQLInlineLink("confirmed_diagnosis",
+                                                  label = T("Diagnosis"),
+                                                  field = "diagnosis_id",
+                                                  selectedList = 5,
+                                                  #multiple = False,
+                                                  )
         else:
-            vulnerability = None
-            diagnosis = None
+            suspected_diagnosis = confirmed_diagnosis = None
 
         # Customise Priority
         from ..helpers import PriorityRepresent
@@ -860,8 +865,8 @@ def dvr_case_activity_resource(r, tablename):
                            "sector_id",
                            need_id,
                            subject,
-                           vulnerability,
-                           diagnosis,
+                           suspected_diagnosis,
+                           confirmed_diagnosis,
                            (T("Initial Situation Details"), ("need_details")),
                            "start_date",
                            priority_field,
@@ -907,8 +912,8 @@ def dvr_case_activity_resource(r, tablename):
                            "sector_id",
                            need_id,
                            subject,
-                           vulnerability,
-                           diagnosis,
+                           suspected_diagnosis,
+                           confirmed_diagnosis,
                            (T("Initial Situation Details"), ("need_details")),
                            "start_date",
                            priority_field,
@@ -1316,7 +1321,8 @@ def response_action_onvalidation(form):
     """
 
     ui_options = get_ui_options()
-    if ui_options.get("response_effort_required"):
+    if ui_options.get("response_effort_required") and not \
+       current.deployment_settings.get_dvr_response_themes_efforts():
 
         db = current.db
         s3db = current.s3db
@@ -1391,15 +1397,15 @@ def configure_response_action_reports(ui_options,
         themes = need = None
 
     # Vulnerability Axis
-    if ui_options_get("activity_pss_vulnerability"):
-        vulnerability = (T("Suspected Diagnosis"),
-                         "case_activity_id$vulnerability_type__link.vulnerability_type_id",
-                         )
-        diagnosis = (T("Diagnosis"),
-                     "case_activity_id$diagnosis__link.vulnerability_type_id",
-                     )
+    if ui_options_get("activity_pss_diagnoses"):
+        suspected_diagnosis = (T("Suspected Diagnosis"),
+                               "case_activity_id$diagnosis_suspected__link.diagnosis_id",
+                               )
+        confirmed_diagnosis = (T("Diagnosis"),
+                               "case_activity_id$diagnosis_confirmed__link.diagnosis_id",
+                               )
     else:
-        vulnerability = diagnosis = None
+        suspected_diagnosis = confirmed_diagnosis = None
 
     # Custom Report Options
     facts = ((T("Number of Actions"), "count(id)"),
@@ -1411,8 +1417,8 @@ def configure_response_action_reports(ui_options,
             "person_id$person_details.nationality",
             "person_id$person_details.marital_status",
             (T("Size of Family"), "person_id$dvr_case.household_size"),
-            vulnerability,
-            diagnosis,
+            suspected_diagnosis,
+            confirmed_diagnosis,
             response_type,
             themes,
             need,
@@ -1927,6 +1933,7 @@ def dvr_response_action_resource(r, tablename):
 
     use_theme = ui_options_get("response_use_theme")
     themes_details = use_theme and settings.get_dvr_response_themes_details()
+    themes_efforts = use_theme and settings.get_dvr_response_themes_efforts()
 
     # Represent for dvr_response_action_theme.id
     if themes_details:
@@ -1952,7 +1959,7 @@ def dvr_response_action_resource(r, tablename):
         crud_strings = current.response.s3.crud_strings["dvr_response_action"]
         crud_strings["title_report"] = T("Action Statistic")
 
-    if r.interactive or r.representation in ("aadata", "xlsx", "xls", "pdf", "s3json"):
+    if r.interactive or r.representation in ("aadata", "xlsx", "xls", "pdf", "json", "s3json"):
 
         human_resource_id = current.auth.s3_logged_in_human_resource()
 
@@ -1962,12 +1969,16 @@ def dvr_response_action_resource(r, tablename):
         field.represent = s3db.hrm_HumanResourceRepresent(show_link=False)
         field.widget = None
 
+        ltable = s3db.dvr_response_action_theme
+
         # Require explicit unit in hours-widget above 4 hours
         from core import S3HoursWidget
-        field = table.hours
-        field.widget = S3HoursWidget(precision = 2,
-                                     explicit_above = 4,
-                                     )
+        for f in (table.hours, ltable.hours):
+            f.widget = S3HoursWidget(precision=2, explicit_above=4)
+
+        # Require input when documenting effort per theme
+        if themes_efforts:
+            ltable.hours.requires = IS_FLOAT_IN_RANGE(0.0, None)
 
         # Use separate due-date field?
         use_due_date = settings.get_dvr_response_due_date()
@@ -2195,30 +2206,5 @@ def dvr_service_contact_resource(r, tablename):
 
     field = table.organisation
     field.readable = field.writable = True
-
-# -------------------------------------------------------------------------
-def dvr_vulnerability_type_resource(r, tablename):
-
-    T = current.T
-
-    table = current.s3db.dvr_vulnerability_type
-
-    # Adjust labels
-    field = table.name
-    field.label = T("Diagnosis")
-
-    # Custom CRUD Strings
-    current.response.s3.crud_strings["dvr_vulnerability_type"] = Storage(
-        label_create = T("Create Diagnosis"),
-        title_display = T("Diagnosis Details"),
-        title_list = T("Diagnoses"),
-        title_update = T("Edit Diagnosis"),
-        label_list_button = T("List Diagnoses"),
-        label_delete_button = T("Delete Diagnosis"),
-        msg_record_created = T("Diagnosis created"),
-        msg_record_modified = T("Diagnosis updated"),
-        msg_record_deleted = T("Diagnosis deleted"),
-        msg_list_empty = T("No Diagnoses currently defined"),
-        )
 
 # END =========================================================================

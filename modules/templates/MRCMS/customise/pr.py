@@ -16,6 +16,8 @@ ABSENCE_LIMIT = 5
 
 # =============================================================================
 def mrcms_absence(row):
+    # TODO update for org_site_presence_event
+    # TODO referring to the site where currently registered as checked-in
     """
         Field method to display duration of absence in
         dvr/person list view and rheader
@@ -686,8 +688,8 @@ def configure_dvr_person_controller(r, privileged=False, administration=False):
 
         # Set default shelter for shelter registration
         # TODO alternative when multiple shelters
-        from ..helpers import mrcms_default_shelter
-        shelter_id = mrcms_default_shelter()
+        from ..helpers import get_default_shelter
+        shelter_id = get_default_shelter()
         if shelter_id:
             rtable = s3db.cr_shelter_registration
             field = rtable.shelter_id
@@ -1083,8 +1085,8 @@ def pr_group_membership_controller(**attr):
         if r.controller == "dvr":
 
             # Set default shelter
-            from ..helpers import mrcms_default_shelter
-            shelter_id = mrcms_default_shelter()
+            from ..helpers import get_default_shelter
+            shelter_id = get_default_shelter()
             if shelter_id:
                 rtable = s3db.cr_shelter_registration
                 field = rtable.shelter_id
@@ -1094,15 +1096,16 @@ def pr_group_membership_controller(**attr):
                 table = resource.table
 
                 from gluon import IS_EMPTY_OR
-                from core import S3AddPersonWidget
+                from core import PersonSelector
 
                 s3db.pr_person.pe_label.label = T("ID")
 
                 field = table.person_id
                 field.represent = s3db.pr_PersonRepresent(show_link=True)
-                field.widget = S3AddPersonWidget(controller = "dvr",
-                                                 pe_label = True,
-                                                 )
+                field.widget = PersonSelector(controller = "dvr",
+                                              pe_label = True,
+                                              nationality = True,
+                                              )
 
                 field = table.role_id
                 field.readable = field.writable = True

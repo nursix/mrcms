@@ -42,6 +42,7 @@ __all__ = ("OrgOrganisationModel",
            "OrgSiteModel",
            "OrgSiteDetailsModel",
            "OrgSiteEventModel",
+           "OrgSitePresenceModel",
            "OrgSiteGroupModel",
            "OrgSiteNameModel",
            "OrgSiteShiftModel",
@@ -1424,10 +1425,10 @@ class OrgOrganisationGroupModel(DataModel):
                            writable = False,
                            ),
                      self.gis_location_id(
-                         widget = S3LocationSelector(#catalog_layers = True,
-                                                     points = False,
-                                                     polygons = True,
-                                                     )
+                         widget = LocationSelector(#catalog_layers = True,
+                                                   points = False,
+                                                   polygons = True,
+                                                   )
                      ),
                      CommentsField(),
                      )
@@ -3203,7 +3204,7 @@ class OrgSiteModel(DataModel):
                    method = "search_ac",
                    action = self.site_search_ac)
 
-        # Custom Method for S3AddPersonWidget
+        # Custom Method for PersonSelector
         # @ToDo: One for HRMs
         set_method("org_site",
                    method = "site_contact_person",
@@ -3567,7 +3568,7 @@ class OrgSiteModel(DataModel):
     @staticmethod
     def site_contact_person(r, **attr):
         """
-            JSON lookup method for S3AddPersonWidget
+            JSON lookup method for PersonSelector
         """
 
         site_id = r.id
@@ -3868,6 +3869,215 @@ class OrgSiteEventModel(DataModel):
 
         # Pass names back to global scope (s3.*)
         return None
+
+# =============================================================================
+class OrgSitePresenceModel(DataModel):
+    """ Model to track the presence of people at sites """
+
+    names = ("org_site_presence_event",
+             "org_site_presence",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        define_table = self.define_table
+        super_link = self.super_link
+        configure = self.configure
+
+        person_id = self.pr_person_id
+        site_represent = self.org_SiteRepresent(show_type=False)
+
+        # ---------------------------------------------------------------------
+        # Presence Events
+        #
+        event_types = {"IN": T("Entering"),
+                       "OUT": T("Leaving"),
+                       "SEEN": T("Seen"),
+                       }
+        tablename = "org_site_presence_event"
+        define_table(tablename,
+                     super_link("site_id", "org_site",
+                                label = T("Place"),
+                                represent = site_represent,
+                                readable = True,
+                                writable = False,
+                                ),
+                     person_id(writable=False),
+                     DateTimeField(writable = False),
+                     Field("event_type",
+                           label = T("Event"),
+                           represent = represent_option(event_types),
+                           requires = IS_IN_SET(event_types, zero=None),
+                           writable = False,
+                           ),
+                     Field("vhash",
+                           readable = False,
+                           writable = False,
+                           ),
+                     )
+
+        # List fields
+        list_fields = ["date",
+                       "event_type",
+                       "site_id",
+                       (T("Registered by"), "created_by"),
+                       ]
+
+        configure(tablename,
+                  create_onaccept = self.presence_event_onaccept,
+                  list_fields = list_fields,
+                  orderby = "%s.date desc" % tablename,
+                  insertable = False,
+                  editable = False,
+                  deletable = False,
+                  )
+
+        # ---------------------------------------------------------------------
+        # Current Presence at Sites
+        #
+        presence_status = {"IN": T("Present##presence"),
+                           "OUT": T("Not Present##presence"),
+                           }
+        tablename = "org_site_presence"
+        define_table(tablename,
+                     super_link("site_id", "org_site",
+                                represent = site_represent,
+                                readable = True,
+                                writable = False,
+                                ),
+                     person_id(writable=False),
+                     DateTimeField(writable=False),
+                     Field("status",
+                           represent = represent_option(presence_status),
+                           requires = IS_IN_SET(presence_status, zero=None),
+                           writable = False,
+                           ),
+                     Field("event_id", "reference org_site_presence_event",
+                           ondelete = "RESTRICT",
+                           readable = False,
+                           writable = False,
+                           ),
+                     )
+
+        # Table configuration
+        configure(tablename,
+                  insertable = False,
+                  editable = False,
+                  deletable = False,
+                  )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        return None
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def presence_event_onaccept(form):
+        """
+            Onaccept routine for new presence events:
+                - set actual date/time and verification hash
+                - update presence records
+        """
+
+        # Get the record_id
+        record_id = get_form_record_id(form)
+        if not record_id:
+            return
+
+        # Get the current date/time
+        now = datetime.datetime.utcnow().replace(microsecond=0)
+
+        db = current.db
+        s3db = current.s3db
+
+        # Load the record
+        table = s3db.org_site_presence_event
+        record = db(table.id == record_id).select(table.id,
+                                                  table.person_id,
+                                                  table.site_id,
+                                                  table.date,
+                                                  table.event_type,
+                                                  limitby = (0, 1),
+                                                  ).first()
+        if not record:
+            return
+
+        # Load the immediately preceding record for the same person
+        query = (table.person_id == record.person_id) & \
+                (table.date <= record.date) & \
+                (table.deleted == False)
+        previous = db(query).select(table.id,
+                                    table.vhash,
+                                    limitby = (0, 1),
+                                    orderby = (~table.date, ~table.id),
+                                    ).first()
+
+        # Compute the vhash
+        vhash = datahash(previous.vhash if previous else None,
+                         record.person_id,
+                         record.site_id,
+                         now.isoformat(),
+                         record.event_type,
+                         )
+
+        # Update the record date+vhash
+        record.update_record(date=now, vhash=vhash)
+
+        # Create/update presence record(s)
+        ptable = s3db.org_site_presence
+
+        # Register as OUT at all sites where the person is currently
+        # registered as IN, other than the event site
+        query = (ptable.person_id == record.person_id) & \
+                (ptable.site_id != record.site_id) & \
+                (ptable.status == "IN") & \
+                (ptable.deleted == False)
+        db(query).update(status="OUT", date=now, event_id=record.id)
+
+        # Get the presence record for the event site
+        query = (ptable.person_id == record.person_id) & \
+                (ptable.site_id == record.site_id) & \
+                (ptable.deleted == False)
+        presence = db(query).select(ptable.id,
+                                    ptable.date,
+                                    ptable.status,
+                                    limitby = (0, 1),
+                                    ).first()
+
+        # Update presence at the site
+        # Notes:
+        #    - multiple consecutive IN will retain the earliest IN date
+        #    - multiple consecutive OUT will update to the latest OUT date
+        #    - a SEEN event does not change presence status/date at the site
+        #    - the tracking reference (event_id) will always be updated
+        new_status = "IN" if record.event_type == "IN" else "OUT"
+        if not presence:
+            # Create new presence record
+            presence = {"person_id": record.person_id,
+                        "site_id": record.site_id,
+                        "date": now,
+                        "status": new_status,
+                        "event_id": record.id,
+                        }
+            presence["id"] = ptable.insert(**presence)
+            s3db.update_super(ptable, presence)
+            current.auth.s3_set_record_owner(ptable, presence)
+            s3db.onaccept(ptable, presence, method="create")
+
+        elif record.event_type == "IN" and presence.status != new_status or \
+             record.event_type == "OUT":
+            # Update the presence record according to this movement
+            presence.update_record(date = now,
+                                   status = new_status,
+                                   event_id = record.id,
+                                   )
+            s3db.onaccept(ptable, presence, method="update")
+        else:
+            # Update only the event reference (also updates modified_by/on)
+            presence.update_record(event_id = record.id)
+            s3db.onaccept(ptable, presence, method="update")
 
 # =============================================================================
 class OrgSiteGroupModel(DataModel):

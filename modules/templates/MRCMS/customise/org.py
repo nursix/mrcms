@@ -109,12 +109,12 @@ def org_facility_resource(r, tablename):
     field.readable = field.writable = False
 
     # Location selector just needs country + address
-    from core import S3LocationSelector
+    from core import LocationSelector
     field = table.location_id
-    field.widget = S3LocationSelector(levels = ["L0"],
-                                      show_address=True,
-                                      show_map = False,
-                                      )
+    field.widget = LocationSelector(levels = ["L0"],
+                                    show_address=True,
+                                    show_map = False,
+                                    )
 
     field = table.obsolete
     field.label = T("Inactive")
@@ -180,5 +180,17 @@ def org_facility_controller(**attr):
         attr["rheader"] = mrcms_org_rheader
 
     return attr
+
+# -------------------------------------------------------------------------
+def org_site_presence_event_resource(r, tablename):
+
+    s3db = current.s3db
+
+    # Represent registering user by their name
+    table = s3db.org_site_presence_event
+    field = table.created_by
+    field.represent = s3db.auth_UserRepresent(show_name=True,
+                                              show_email=False,
+                                              )
 
 # END =========================================================================

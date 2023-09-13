@@ -53,12 +53,14 @@ def mrcms_dvr_rheader(r, tabs=None):
                             (T("Activities"), "case_activity"),
                             (T("Appointments"), "case_appointment"),
                             #(T("Allowance"), "allowance"),
-                            (T("Presence"), "shelter_registration_history"),
+                            #(T("Presence"), "shelter_registration_history"),
+                            (T("Presence"), "site_presence_event"),
                             (T("Photos"), "image"),
                             (T("Notes"), "case_note"),
                             (T("Confiscation"), "seized_item"),
                             ]
                     if current.auth.s3_has_roles(("ORG_ADMIN",
+                                                  "CASE_ADMIN",
                                                   "CASE_MANAGER",
                                                   )):
                         tabs.insert(-3, (T("Events"), "case_event"))
@@ -95,7 +97,7 @@ def mrcms_dvr_rheader(r, tabs=None):
                                    (T("Shelter"), shelter),
                                    ],
                                   [(T("Name"), name),
-                                   (T("Transferable"), transferable),
+                                   (T("Transferable"), transferable), # TODO disable transferability
                                    (T("Checked-out"), "absence"),
                                    ],
                                   ["date_of_birth",

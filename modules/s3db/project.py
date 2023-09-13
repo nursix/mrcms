@@ -1480,7 +1480,7 @@ class ProjectLocationModel(DataModel):
                      self.gis_location_id(
                         represent = self.gis_LocationRepresent(sep=", "),
                         requires = IS_LOCATION(),
-                        # S3LocationSelector doesn't support adding new locations dynamically
+                        # LocationSelector doesn't support adding new locations dynamically
                         # - if this isn't required, can set to use this widget in the template
                         widget = S3LocationAutocompleteWidget(),
                         comment = S3PopupLink(c = "gis",
@@ -1704,7 +1704,7 @@ class ProjectLocationModel(DataModel):
         define_table(tablename,
                      project_location_id(),
                      self.pr_person_id(comment = None,
-                                       widget = S3AddPersonWidget(controller="pr"),
+                                       widget = PersonSelector(controller="pr"),
                                        empty = False,
                                        ),
                      )
@@ -2600,7 +2600,7 @@ class ProjectActivityModel(DataModel):
                      # Beneficiary could be a person_id
                      # Either way label should be clear
                      self.pr_person_id(label = T("Contact Person"),
-                                       widget = S3AddPersonWidget(controller="pr"),
+                                       widget = PersonSelector(controller="pr"),
                                        ),
                      Field("time_estimated", "double",
                            label = "%s (%s)" % (T("Time Estimate"),

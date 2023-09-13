@@ -948,40 +948,6 @@ class S3Config(Storage):
         """
         return self.auth.get("person_realm_member_org", False)
 
-    def get_auth_entity_role_manager(self):
-        """
-            Activate Entity Role Manager (=embedded Role Manager Tab for OrgAdmins)
-        """
-        return self.auth.get("entity_role_manager", False)
-
-    def get_auth_role_modules(self):
-        """
-            Which modules are included in the Role Manager
-            - to assign discrete permissions to via UI
-        """
-        T = current.T
-        return self.auth.get("role_modules", OrderedDict([
-            ("staff", T("Staff")),
-            ("vol", T("Volunteers")),
-            ("member", T("Members")),
-            ("inv", T("Warehouses")),
-            ("asset", T("Assets")),
-            ("project", T("Projects")),
-            ("irs", T("Incidents"))
-        ]))
-
-    def get_auth_access_levels(self):
-        """
-            Access levels for the Role Manager UI
-        """
-        T = current.T
-        return self.auth.get("access_levels", OrderedDict([
-            ("reader", T("Reader")),
-            ("data_entry", T("Data Entry")),
-            ("editor", T("Editor")),
-            ("super", T("Super Editor"))
-        ]))
-
     def get_auth_approve_user_message(self):
         return self.auth.get("auth_approve_user_message", None)
 
@@ -2440,7 +2406,7 @@ class S3Config(Storage):
     def get_ui_multiselect_widget(self):
         """
             Whether all dropdowns should use the S3MultiSelectWidget
-            - currently respected by Auth Registration & S3LocationSelector
+            - currently respected by Auth Registration & LocationSelector
 
             Options:
                 False (default): No widget
@@ -3504,22 +3470,6 @@ class S3Config(Storage):
         """
         return self.cr.get("shelter_allocation", False)
 
-    def get_org_site_check_in_qrcode(self):
-        """
-            Use QRInput for site check-in/out
-                - True to enable and use QR contents verbatim
-                - a tuple (pattern, index) for QR contents parsing
-                - False to disable
-        """
-        return self.org.get("site_check_in_qrcode", False)
-
-    def get_cr_check_out_is_final(self):
-        """
-            Whether checking out of a shelter frees up the place
-            or is just leaving the site temporarily
-        """
-        return self.cr.get("check_out_is_final", True)
-
     def get_cr_tags(self):
         """
             Whether shelters should show a tags tab
@@ -3845,12 +3795,6 @@ class S3Config(Storage):
         """
         return self.dvr.get("needs_hierarchical", False)
 
-    def get_dvr_vulnerability_types_hierarchical(self):
-        """
-            Vulnerability types are hierarchical
-        """
-        return self.dvr.get("vulnerability_types_hierarchical", False)
-
     def get_dvr_manage_response_actions(self):
         """
             Manage individual response actions in case activities
@@ -3918,6 +3862,12 @@ class S3Config(Storage):
             Record response details per theme
         """
         return self.__lazy("dvr", "response_themes_details", default=False)
+
+    def get_dvr_response_themes_efforts(self):
+        """
+            Record response efforts per theme
+        """
+        return self.__lazy("dvr", "response_themes_efforts", default=False)
 
     def get_dvr_response_activity_autolink(self):
         """
@@ -5066,6 +5016,42 @@ class S3Config(Storage):
         """
         return self.org.get("site_check")
 
+    # TODO *** update default config.py
+    def get_org_site_presence_site_types(self):
+        """
+            Site types where presence registration is allowed
+            - True to allow all site types
+            - List of tablenames to select site types
+            - False to deny all site types
+        """
+        return self.org.get("site_presence_site_types", True)
+
+    def get_org_site_presence_expires(self):
+        """
+            Number of hours after which the user's IN-registration expires
+            - 0 to disable expiry
+        """
+        return self.org.get("site_presence_expires", 0)
+
+    def get_org_site_presence_qrcode(self):
+        """
+            Use QRInput for site presence registration
+                - True to enable and use QR contents verbatim
+                - a tuple (pattern, index) for QR contents parsing
+                - False to disable
+        """
+        return self.org.get("site_presence_qrcode", False)
+
+    def get_org_site_check_in_qrcode(self):
+        """
+            Use QRInput for site check-in/out
+                - True to enable and use QR contents verbatim
+                - a tuple (pattern, index) for QR contents parsing
+                - False to disable
+        """
+        # TODO deprecate
+        return self.org.get("site_check_in_qrcode", False)
+
     def set_org_dependent_field(self,
                                 tablename=None,
                                 fieldname=None,
@@ -5159,7 +5145,7 @@ class S3Config(Storage):
 
     def get_pr_editable_fields(self):
         """
-            Fields which are editable in the AddPersonWidget
+            Fields which are editable in the PersonSelector
         """
         return self.pr.get("editable_fields", [])
 
@@ -5186,64 +5172,56 @@ class S3Config(Storage):
 
     def get_pr_label_fullname(self):
         """
-            Label for the AddPersonWidget's 'Name' field
+            Label for the PersonSelector's 'Name' field
         """
         return self.__lazy("pr", "label_fullname", default="Name")
 
     def get_pr_lookup_duplicates(self):
         """
-            Whether the AddPersonWidget does a fuzzy search for duplicates
+            Whether the PersonSelector does a fuzzy search for duplicates
         """
         return self.pr.get("lookup_duplicates", False)
 
     def get_pr_request_dob(self):
-        """ Include Date of Birth in the AddPersonWidget """
+        """ Include Date of Birth in the PersonSelector """
         return self.__lazy("pr", "request_dob", default=True)
 
     def get_pr_dob_required(self):
-        """ Whether Date of Birth is Mandatory, including in the AddPersonWidget """
+        """ Whether Date of Birth is Mandatory, including in the PersonSelector """
         return self.__lazy("pr", "dob_required", default=False)
 
     def get_pr_request_email(self):
-        """ Include Email in the AddPersonWidget """
+        """ Include Email in the PersonSelector """
         return self.__lazy("pr", "request_email", default=True)
 
-    def get_pr_request_father_name(self):
-        """ Include Father Name in the AddPersonWidget """
-        return self.__lazy("pr", "request_father_name", default=False)
-
-    def get_pr_request_grandfather_name(self):
-        """ Include GrandFather Name in the AddPersonWidget """
-        return self.__lazy("pr", "request_grandfather_name", default=False)
-
     def get_pr_request_gender(self):
-        """ Include Gender in the AddPersonWidget """
+        """ Include Gender in the PersonSelector """
         return self.__lazy("pr", "request_gender", default=True)
 
     def get_pr_request_home_phone(self):
-        """ Include Home Phone in the AddPersonWidget """
+        """ Include Home Phone in the PersonSelector """
         return self.__lazy("pr", "request_home_phone", default=False)
 
     def get_pr_request_mobile_phone(self):
-        """ Include Mobile Phone in the AddPersonWidget """
+        """ Include Mobile Phone in the PersonSelector """
         return self.__lazy("pr", "request_mobile_phone", default=True)
+
+    def get_pr_request_nationality(self):
+        """ Include Nationality in the PersonSelector """
+        return self.__lazy("pr", "request_nationality", default=False)
 
     def get_pr_request_tags(self):
         """
-            Include Tags in the AddPersonWidget
+            Include Tags in the PersonSelector
             List of Tuples: (label, tag)
         """
         return self.__lazy("pr", "request_tags", default=[])
-
-    def get_pr_request_year_of_birth(self):
-        """ Include Year of Birth in the AddPersonWidget """
-        return self.__lazy("pr", "request_year_of_birth", default=False)
 
     def get_pr_name_format(self):
         """
             Format with which to represent Person Names
 
-            Generally want an option in AddPersonWidget to handle the input like this too
+            Generally want an option in PersonSelector to handle the input like this too
         """
         return self.__lazy("pr", "name_format", default="%(first_name)s %(middle_name)s %(last_name)s")
 
@@ -5255,7 +5233,7 @@ class S3Config(Storage):
 
     def get_pr_separate_name_fields(self):
         """
-            Whether the AddPersonWidget provides separate name fields or not
+            Whether the PersonSelector provides separate name fields or not
             Options:
                 False (single field)
                 2 (first/last)

@@ -42,6 +42,8 @@ def config(settings):
                                                #"volunteer": T("Volunteer"),
                                                }
     settings.auth.registration_link_user_to_default = ["staff"]
+    # Disable password-retrieval feature
+    settings.auth.password_retrieval = False
 
     # Approval emails get sent to all admins
     settings.mail.approver = "ADMIN"
@@ -145,7 +147,6 @@ def config(settings):
     #
     settings.cr.shelter_population_dynamic = True
     settings.cr.shelter_units = True
-    settings.cr.check_out_is_final = False
 
     # Generate tasks for shelter inspections
     settings.cr.shelter_inspection_tasks = True
@@ -243,19 +244,21 @@ def config(settings):
     #      - the organisation the user has the staff role for
     #settings.org.default_organisation = "Johanniter-Unfall-Hilfe"
     #settings.org.default_site = "Erstaufnahme Mannheim"
-    #settings.org.branches = True
 
-    settings.org.site_check_in_qrcode = (r"(?<code>\d+)##.*##.*##.*", "code")
+    settings.org.branches = False
+    settings.org.site_presence_qrcode = (r"(?<code>\d+)##.*##.*##.*", "code")
 
     from .customise.org import org_group_controller, \
                                org_organisation_controller, \
                                org_facility_resource, \
-                               org_facility_controller
+                               org_facility_controller, \
+                               org_site_presence_event_resource
 
     settings.customise_org_group_controller = org_group_controller
     settings.customise_org_organisation_controller = org_organisation_controller
     settings.customise_org_facility_resource = org_facility_resource
     settings.customise_org_facility_controller = org_facility_controller
+    settings.customise_org_site_presence_event_resource = org_site_presence_event_resource
 
     # -------------------------------------------------------------------------
     # Persons Module Settings
