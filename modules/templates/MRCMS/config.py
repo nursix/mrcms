@@ -138,9 +138,15 @@ def config(settings):
     settings.customise_auth_user_resource = auth_user_resource
 
     # -------------------------------------------------------------------------
-    # CMS Settings
+    # CMS Settings and Customizations
     #
     settings.cms.hide_index = True
+
+    from .customise.cms import cms_post_resource, \
+                               cms_post_controller
+
+    settings.customise_cms_post_resource = cms_post_resource
+    settings.customise_cms_post_controller = cms_post_controller
 
     # -------------------------------------------------------------------------
     # CR Settings
@@ -227,6 +233,14 @@ def config(settings):
     # Human Resource Module Settings
     #
     settings.hrm.teams_orgs = False
+    settings.hrm.staff_departments = False
+    settings.hrm.deletable = False
+
+    from .customise.hrm import hrm_human_resource_resource, \
+                               hrm_human_resource_controller
+
+    settings.customise_hrm_human_resource_resource = hrm_human_resource_resource
+    settings.customise_hrm_human_resource_controller = hrm_human_resource_controller
 
     # -------------------------------------------------------------------------
     # Inventory Module Settings
@@ -266,6 +280,7 @@ def config(settings):
     settings.pr.hide_third_gender = False
     settings.pr.separate_name_fields = 2
     settings.pr.name_format= "%(last_name)s, %(first_name)s"
+    settings.pr.generate_pe_label = True
 
     from .customise.pr import pr_person_resource, \
                               pr_person_controller, \

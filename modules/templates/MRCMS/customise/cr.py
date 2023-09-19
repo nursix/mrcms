@@ -269,6 +269,8 @@ def cr_shelter_controller(**attr):
     T = current.T
     s3 = current.response.s3
 
+    settings = current.deployment_settings
+
     # Custom prep
     standard_prep = s3.prep
     def custom_prep(r):
@@ -328,7 +330,11 @@ def cr_shelter_controller(**attr):
                                    deletable = False,
                                    )
 
-        if r.component_name == "shelter_unit":
+        if not r.component:
+            # Open shelter basic details in read mode
+            settings.ui.open_read_first = True
+
+        elif r.component_name == "shelter_unit":
             # Expose "transitory" flag for housing units
             utable = current.s3db.cr_shelter_unit
             field = utable.transitory
@@ -387,9 +393,9 @@ def cr_shelter_controller(**attr):
         return output
     s3.postp = custom_postp
 
-    from ..rheaders import mrcms_cr_rheader
+    from ..rheaders import cr_rheader
     attr = dict(attr)
-    attr["rheader"] = mrcms_cr_rheader
+    attr["rheader"] = cr_rheader
 
     return attr
 
@@ -587,10 +593,10 @@ def profile_header(r):
                  _class="dbstats-sub",
                  )
 
-    OTHER = TR(TD(T("Population Other")),
-               TD(other_total),
-               _class="dbstats-extra",
-               )
+    #OTHER = TR(TD(T("Population Other")),
+    #           TD(other_total),
+    #           _class="dbstats-extra",
+    #           )
 
     # Get the IDs of open case statuses
     query = (stable.is_closed == False) & (stable.deleted != True)

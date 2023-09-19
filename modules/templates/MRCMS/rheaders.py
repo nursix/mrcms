@@ -8,9 +8,11 @@ from gluon import current, A, URL, SPAN
 
 from core import S3ResourceHeader, s3_fullname, s3_rheader_resource
 
+from .helpers import hr_details
+
 # =============================================================================
-def mrcms_dvr_rheader(r, tabs=None):
-    """ DVR custom resource headers """
+def dvr_rheader(r, tabs=None):
+    """ Custom resource headers for DVR module """
 
     if r.representation != "html":
         # Resource headers only used in interactive views
@@ -29,6 +31,7 @@ def mrcms_dvr_rheader(r, tabs=None):
         T = current.T
 
         if tablename == "pr_person":
+            # Case file
 
             # "Case Archived" hint
             hint = lambda record: SPAN(T("Invalid Case"),
@@ -50,25 +53,27 @@ def mrcms_dvr_rheader(r, tabs=None):
                 if not tabs:
                     tabs = [(T("Basic Details"), None),
                             (T("Family Members"), "group_membership/"),
-                            (T("Activities"), "case_activity"),
+                            (T("ID"), "identity"),
+                            (T("Needs"), "case_activity"),
                             (T("Appointments"), "case_appointment"),
-                            #(T("Allowance"), "allowance"),
-                            #(T("Presence"), "shelter_registration_history"),
-                            (T("Presence"), "site_presence_event"),
+                            # case events
+                            # site presence
                             (T("Photos"), "image"),
                             (T("Notes"), "case_note"),
-                            (T("Confiscation"), "seized_item"),
+                            #(T("Confiscation"), "seized_item"),
                             ]
                     if current.auth.s3_has_roles(("ORG_ADMIN",
                                                   "CASE_ADMIN",
-                                                  "CASE_MANAGER",
+                                                  #"CASE_MANAGER",
                                                   )):
-                        tabs.insert(-3, (T("Events"), "case_event"))
+                        tabs[5:5] = [(T("Presence"), "site_presence_event"),
+                                     (T("Events"), "case_event"),
+                                     ]
 
                 case = resource.select(["dvr_case.status_id",
                                         "dvr_case.archived",
                                         "dvr_case.household_size",
-                                        "dvr_case.transferable",
+                                        #"dvr_case.transferable",
                                         "dvr_case.last_seen_on",
                                         "first_name",
                                         "last_name",
@@ -85,9 +90,8 @@ def mrcms_dvr_rheader(r, tabs=None):
                     case_status = lambda row: case["dvr_case.status_id"]
                     household_size = lambda row: case["dvr_case.household_size"]
                     last_seen_on = lambda row: case["dvr_case.last_seen_on"]
-                    name = s3_fullname
                     shelter = lambda row: case["cr_shelter_registration.shelter_unit_id"]
-                    transferable = lambda row: case["dvr_case.transferable"]
+                    #transferable = lambda row: case["dvr_case.transferable"]
                 else:
                     # Target record exists, but doesn't match filters
                     return None
@@ -96,9 +100,9 @@ def mrcms_dvr_rheader(r, tabs=None):
                                    (T("Case Status"), case_status),
                                    (T("Shelter"), shelter),
                                    ],
-                                  [(T("Name"), name),
-                                   (T("Transferable"), transferable), # TODO disable transferability
-                                   (T("Checked-out"), "absence"),
+                                  [#(T("Name"), name),
+                                   #(T("Transferable"), transferable),
+                                   #(T("Checked-out"), "absence"),
                                    ],
                                   ["date_of_birth",
                                    (T("Size of Family"), household_size),
@@ -109,12 +113,11 @@ def mrcms_dvr_rheader(r, tabs=None):
                 if archived:
                     rheader_fields.insert(0, [(None, hint)])
 
+                rheader_title = s3_fullname
+
                 # Generate rheader XML
-                rheader = S3ResourceHeader(rheader_fields, tabs)(
-                                r,
-                                table = resource.table,
-                                record = record,
-                                )
+                rheader = S3ResourceHeader(rheader_fields, tabs, title=rheader_title)
+                rheader = rheader(r, table=resource.table, record=record)
 
                 # Add profile picture
                 from core import s3_avatar_represent
@@ -132,17 +135,6 @@ def mrcms_dvr_rheader(r, tabs=None):
 
                 return rheader
 
-        elif tablename == "dvr_case":
-
-            if not tabs:
-                tabs = [(T("Basic Details"), None),
-                        (T("Activities"), "case_activity"),
-                        ]
-
-            rheader_fields = [["reference"],
-                              ["status_id"],
-                              ]
-
         rheader = S3ResourceHeader(rheader_fields, tabs)(r,
                                                          table=resource.table,
                                                          record=record,
@@ -151,8 +143,8 @@ def mrcms_dvr_rheader(r, tabs=None):
     return rheader
 
 # =============================================================================
-def mrcms_org_rheader(r, tabs=None):
-    """ ORG custom resource headers """
+def org_rheader(r, tabs=None):
+    """ Custom resource headers for ORG module """
 
     if r.representation != "html":
         # Resource headers only used in interactive views
@@ -211,8 +203,8 @@ def mrcms_org_rheader(r, tabs=None):
     return rheader
 
 # =============================================================================
-def mrcms_cr_rheader(r, tabs=None):
-    """ CR custom resource headers """
+def cr_rheader(r, tabs=None):
+    """ Custom resource headers for shelter registry """
 
     if r.representation != "html":
         # Resource headers only used in interactive views
@@ -233,11 +225,11 @@ def mrcms_cr_rheader(r, tabs=None):
         if tablename == "cr_shelter":
 
             if not tabs:
-                tabs = [(T("Basic Details"), None),
+                tabs = [(T("Basic Details"), None, {}, "read"),
                         (T("Housing Units"), "shelter_unit"),
                         #(T("Client Registration"), "shelter_registration"),
                         (T("Images"), "image"),
-                        (T("Documents"), "document"),
+                        (T("Documents"), "document"), # TODO customise docs (see rlpptm)
                         ]
 
             rheader_fields = [["organisation_id",
@@ -249,6 +241,104 @@ def mrcms_cr_rheader(r, tabs=None):
 
         rheader = S3ResourceHeader(rheader_fields, tabs, title=rheader_title)
         rheader = rheader(r, table=resource.table, record=record)
+
+    return rheader
+
+# -----------------------------------------------------------------------------
+def hrm_rheader(r, tabs=None):
+    """ Custom resource headers for HRM """
+
+    if r.representation != "html":
+        # Resource headers only used in interactive views
+        return None
+
+    tablename, record = s3_rheader_resource(r)
+    if tablename != r.tablename:
+        resource = current.s3db.resource(tablename, id=record.id)
+    else:
+        resource = r.resource
+
+    rheader = None
+    rheader_fields = []
+
+    if record:
+
+        T = current.T
+
+        if tablename == "pr_person":
+            # Staff file
+
+            tabs = [(T("Person Details"), None, {}, "read"),
+                    (T("Contact Information"), "contacts"),
+                    (T("Address"), "address"),
+                    (T("ID"), "identity"),
+                    (T("Staff Record"), "human_resource"),
+                    (T("Photos"), "image"),
+                    ]
+
+            details = hr_details(record)
+            rheader_fields = [[(T("User Account"), lambda i: details["account"])],
+                              ]
+
+            organisation = details["organisation"]
+            if organisation:
+                rheader_fields[0].insert(0, (T("Organization"), lambda i: organisation))
+
+            rheader_title = s3_fullname
+
+            rheader = S3ResourceHeader(rheader_fields, tabs, title=rheader_title)
+            rheader = rheader(r, table=resource.table, record=record)
+
+            # Add profile picture
+            from core import s3_avatar_represent
+            record_id = record.id
+            rheader.insert(0, A(s3_avatar_represent(record_id,
+                                                    "pr_person",
+                                                    _class = "rheader-avatar",
+                                                    ),
+                                _href=URL(f = "person",
+                                          args = [record_id, "image"],
+                                          vars = r.get_vars,
+                                          ),
+                                ))
+
+    return rheader
+
+# -----------------------------------------------------------------------------
+def default_rheader(r, tabs=None):
+    """ Custom resource header for user profile """
+
+    if r.representation != "html":
+        # Resource headers only used in interactive views
+        return None
+
+    tablename, record = s3_rheader_resource(r)
+    if tablename != r.tablename:
+        resource = current.s3db.resource(tablename, id=record.id)
+    else:
+        resource = r.resource
+
+    rheader = None
+    rheader_fields = []
+
+    if record:
+
+        T = current.T
+
+        if tablename == "pr_person":
+            # Personal profile
+            tabs = [(T("Person Details"), None),
+                    (T("User Account"), "user_profile"),
+                    (T("ID"), "identity"),
+                    (T("Contact Information"), "contacts"),
+                    (T("Address"), "address"),
+                    (T("Staff Record"), "human_resource"),
+                    ]
+            rheader_fields = []
+            rheader_title = s3_fullname
+
+            rheader = S3ResourceHeader(rheader_fields, tabs, title=rheader_title)
+            rheader = rheader(r, table=resource.table, record=record)
 
     return rheader
 

@@ -1303,14 +1303,60 @@ class PRPersonModel(DataModel):
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def pr_person_onaccept(form):
+    def generate_pe_label(person_id):
+
+        db = current.db
+
+        table = current.s3db.pr_person
+        record = db(table.id == person_id).select(table.id,
+                                                  table.uuid,
+                                                  table.pe_label,
+                                                  limitby = (0, 1),
+                                                  ).first()
+        if not record or record.pe_label:
+            return
+
+        try:
+            uid = int(record.uuid[9:14], 16) % 1000000
+        except (TypeError, ValueError):
+            import uuid
+            uid = int(uuid.uuid4().urn[9:14], 16) % 1000000
+
+        # Generate code
+        import random
+        error = False
+        for _ in range(20):
+            prefix = "".join(random.choices("ABCEFGHJKLNPSTUWXY", k=3))
+            label = "%s%06d" % (prefix, uid)
+
+            query = (table.id != person_id) & \
+                    (table.pe_label == label)
+            error = bool(db(query).select(table.id, limitby=(0, 1)).first())
+            if not error:
+                break
+
+        if not error:
+            record.update_record(pe_label=label,
+                                 modified_on = table.modified_on,
+                                 modified_by = table.modified_by,
+                                 )
+        else:
+            raise RuntimeError("Could not generate unique ID label")
+
+        return label
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def pr_person_onaccept(cls, form):
         """
             Onaccept callback
                 - update any user record associated with this person
+                - generate a unique PE label
         """
 
         db = current.db
         s3db = current.s3db
+        settings = current.deployment_settings
 
         form_vars_get = form.vars.get
         person_id = form_vars_get("id")
@@ -1339,7 +1385,7 @@ class PRPersonModel(DataModel):
             if first_name and user.first_name != first_name:
                 update["first_name"] = first_name
 
-            middle_as_last = current.deployment_settings.get_L10n_mandatory_middlename()
+            middle_as_last = settings.get_L10n_mandatory_middlename()
 
             name = middle_name if middle_as_last else last_name
             if first_name and user.last_name != name:
@@ -1347,6 +1393,9 @@ class PRPersonModel(DataModel):
 
             if update:
                 user.update_record(**update)
+
+        if settings.get_pr_generate_pe_label():
+            cls.generate_pe_label(person_id)
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -5196,16 +5245,18 @@ class PRIdentityModel(DataModel):
                                             ),
                           Field("type", "integer",
                                 default = 1,
-                                label = T("ID Type"),
+                                label = T("Document Type"),
                                 represent = represent_option(pr_id_type_opts),
                                 requires = IS_IN_SET(pr_id_type_opts,
                                                      zero=None),
                                 ),
                           Field("description",
                                 label = T("Description"),
+                                represent = lambda v, row=None: v or "-",
                                 ),
                           Field("value",
-                                label = T("Number"),
+                                label = T("Number##ordinal"),
+                                represent = lambda v, row=None: v or "-",
                                 ),
                           DateField("valid_from",
                                     label = T("Valid From"),
@@ -5215,8 +5266,6 @@ class PRIdentityModel(DataModel):
                           DateField("valid_until",
                                     label = T("Valid Until"),
                                     set_max = "#pr_identity_valid_from",
-                                    #start_field = "pr_identity_valid_from",
-                                    #default_interval = 12,
                                     ),
                           Field("country_code", length=4,
                                 label = T("Country Code"),
@@ -5232,31 +5281,37 @@ class PRIdentityModel(DataModel):
                                 ),
                           Field("ia_name",
                                 label = T("Issuing Authority"),
+                                represent = lambda v, row=None: v or "-",
                                 ),
-                          #Field("ia_subdivision"), # Name of issuing authority subdivision
-                          #Field("ia_code"), # Code of issuing authority (if any)
                           Field("image", "upload",
                                 autodelete = True,
                                 label = T("Scanned Copy"),
                                 length = current.MAX_FILENAME_LENGTH,
-                                # upload folder needs to be visible to the download() function as well as the upload
-                                uploadfolder = os.path.join(current.request.folder,
-                                                            "uploads"),
-                               ),
+                                uploadfolder = os.path.join(current.request.folder, "uploads"),
+                                represent = represent_file("pr_identity", "image"),
+                                ),
+                          # For internally-issued IDs,
+                          # activate in template as required
+                          Field("invalid", "boolean",
+                                label = T("Invalid"),
+                                default = False,
+                                readable = False,
+                                writable = False,
+                                ),
                           CommentsField(),
                           )
 
         # CRUD Strings
         current.response.s3.crud_strings[tablename] = Storage(
-            label_create = T("Add Identity"),
-            title_display = T("Identity Details"),
-            title_list = T("Identities"),
-            title_update = T("Edit Identity"),
-            label_list_button = T("List Identities"),
-            msg_record_created = T("Identity added"),
-            msg_record_modified = T("Identity updated"),
-            msg_record_deleted = T("Identity deleted"),
-            msg_list_empty = T("No Identities currently registered"))
+            label_create = T("Add Identity Document"),
+            title_display = T("Identity Document"),
+            title_list = T("Identity Document"),
+            title_update = T("Edit Identity Document"),
+            label_list_button = T("List Identity Documents"),
+            msg_record_created = T("Identity Document added"),
+            msg_record_modified = T("Identity Document updated"),
+            msg_record_deleted = T("Identity Document deleted"),
+            msg_list_empty = T("No Identity Document currently registered"))
 
         self.configure(tablename,
                        # People can have more than 1 'Other', or even Passport
