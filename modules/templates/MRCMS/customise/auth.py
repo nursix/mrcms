@@ -48,9 +48,51 @@ def realm_entity(table, row):
         if organisation_id:
             realm_entity = s3db.pr_get_pe_id("org_organisation", organisation_id)
 
+    #elif tablename in ("dvr_case_flag",
+    #                   "dvr_appointment_type",
+    #                   "dvr_case_event_type",
+    #                   ):
+    #    # Owned by the organisation for which they are defined (default okay)
+    #    pass
+
+    elif tablename == "dvr_case_flag_case":
+
+        table = s3db.table(tablename)
+        ftable = s3db.dvr_case_flag
+        query = (table._id == row.id) & (ftable.id == table.flag_id)
+        flag = db(query).select(ftable.organisation_id, limitby=(0, 1)).first()
+        if flag and flag.organisation_id:
+            realm_entity = s3db.pr_get_pe_id("org_organisation", flag.organisation_id)
+        else:
+            # Inherit from person via person_id
+            realm_entity = person_realm_entity(table, row, default=realm_entity)
+
+    elif tablename == "dvr_case_appointment":
+
+        table = s3db.table(tablename)
+        ttable = s3db.dvr_case_appointment_type
+        query = (table._id == row.id) & (ttable.id == table.type_id)
+        atype = db(query).select(ttable.organisation_id, limitby=(0, 1)).first()
+        if atype and atype.organisation_id:
+            realm_entity = s3db.pr_get_pe_id("org_organisation", atype.organisation_id)
+        else:
+            # Inherit from person via person_id
+            realm_entity = person_realm_entity(table, row, default=realm_entity)
+
+    elif tablename == "dvr_case_event":
+
+        table = s3db.table(tablename)
+        ttable = s3db.dvr_case_event_type
+        query = (table._id == row.id) & (ttable.id == table.type_id)
+        etype = db(query).select(ttable.organisation_id, limitby=(0, 1)).first()
+        if etype and etype.organisation_id:
+            realm_entity = s3db.pr_get_pe_id("org_organisation", etype.organisation_id)
+        else:
+            # Inherit from person via person_id
+            realm_entity = person_realm_entity(table, row, default=realm_entity)
+
     elif tablename in ("dvr_case_activity",
                        "dvr_case_details",
-                       "dvr_case_flag_case",
                        "dvr_case_language",
                        "dvr_note",
                        "dvr_residence_status",
@@ -63,13 +105,7 @@ def realm_entity(table, row):
                        ):
         # Inherit from person via person_id
         table = s3db.table(tablename)
-        ptable = s3db.pr_person
-        query = (table._id == row.id) & (ptable.id == table.person_id)
-        person = db(query).select(ptable.realm_entity,
-                                  limitby = (0, 1),
-                                  ).first()
-        if person:
-            realm_entity = person.realm_entity
+        realm_entity = person_realm_entity(table, row, default=realm_entity)
 
     elif tablename in ("pr_address",
                        "pr_contact",
@@ -78,13 +114,7 @@ def realm_entity(table, row):
                        ):
         # Inherit from person via pe_id
         table = s3db.table(tablename)
-        ptable = s3db.pr_person
-        query = (table._id == row.id) & (ptable.pe_id == table.pe_id)
-        person = db(query).select(ptable.realm_entity,
-                                  limitby = (0, 1),
-                                  ).first()
-        if person:
-            realm_entity = person.realm_entity
+        realm_entity = person_realm_entity(table, row, key="pe_id", default=realm_entity)
 
     elif tablename in ("dvr_case_activity_need",
                        "dvr_case_activity_update",
@@ -109,9 +139,10 @@ def realm_entity(table, row):
         if group and group.group_type == 7:
             realm_entity = None
 
-    elif tablename == "doc_document":
+    elif tablename in ("doc_document", "doc_image"):
         # Inherit from doc entity, alternatively context organisation
-        realm_entity = document_realm_entity(table, row)
+        table = s3db.table(tablename)
+        realm_entity = doc_realm_entity(table, row)
 
     #elif tablename == "cr_shelter":
     #    # Self-owned, OU of managing organisation (default ok)
@@ -134,12 +165,18 @@ def realm_entity(table, row):
     #    # Self-owned (default ok)
     #    pass
 
+    #elif tablename in ("org_site_presence",
+    #                   "org_site_presence_event",
+    #                   ):
+    #    # Owned by the site, OU of managing organisation (default ok)
+    #    pass
+
     return realm_entity
 
 # -------------------------------------------------------------------------
-def document_realm_entity(table, row):
+def doc_realm_entity(table, row):
     """
-        Realm rule for doc_document
+        Realm rule for doc_document/doc_image
     """
 
     db = current.db
@@ -147,15 +184,14 @@ def document_realm_entity(table, row):
 
     realm_entity = 0
 
-    dtable = s3db.doc_document
     etable = s3db.doc_entity
 
     # Get the document record including instance type of doc_entity
-    left = etable.on(etable.doc_id == dtable.doc_id)
-    query = (dtable.id == row.id)
-    row = db(query).select(dtable.id,
-                           dtable.doc_id,
-                           dtable.organisation_id,
+    left = etable.on(etable.doc_id == table.doc_id)
+    query = (table.id == row.id)
+    row = db(query).select(table.id,
+                           table.doc_id,
+                           table.organisation_id,
                            etable.instance_type,
                            left = left,
                            limitby = (0, 1),
@@ -163,7 +199,7 @@ def document_realm_entity(table, row):
     if not row:
         return realm_entity
 
-    document = row.doc_document
+    document = row[table]
     instance_type = row.doc_entity.instance_type
 
     # Inherit the realm entity from instance, if available
@@ -179,11 +215,39 @@ def document_realm_entity(table, row):
 
     # Fallback: use context organisation as realm entity
     if realm_entity == 0 and document.organisation_id:
-
         realm_entity = s3db.pr_get_pe_id("org_organisation",
                                          document.organisation_id,
                                          )
     return realm_entity
+
+# -------------------------------------------------------------------------
+def person_realm_entity(table, row, key="person_id", default=0):
+    """
+        Returns the realm entity of the context person record
+
+        Args:
+            table: the Table
+            row: the Row
+            key: the key referencing pr_person (person_id|pe_id)
+            default: the default to return if no context record is found
+
+        Returns:
+            the realm entity (pe_id) of the context person record
+    """
+
+    ptable = current.s3db.pr_person
+    query = (table._id == row.id)
+    if key == "person_id":
+        query &= (ptable.id == table.person_id)
+    elif key == "pe_id":
+        query &= (ptable.pe_id == table.pe_id)
+    else:
+        return default
+
+    person = current.db(query).select(ptable.realm_entity,
+                                      limitby = (0, 1),
+                                      ).first()
+    return person.realm_entity if person else default
 
 # -------------------------------------------------------------------------
 def auth_user_resource(r, tablename):

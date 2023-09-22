@@ -81,17 +81,20 @@ def person():
             # (also filtering status filter opts)
             closed = get_vars.get("closed")
             get_status_opts = s3db.dvr_case_status_filter_opts
-            if closed == "1":
+            if closed == "only":
+                # Show only closed cases
                 CASES = CLOSED
                 query &= FS("dvr_case.status_id$is_closed") == True
                 status_opts = lambda: get_status_opts(closed=True)
-            elif closed == "0":
+            elif closed == "1" or closed == "include":
+                # Show both closed and open cases
+                status_opts = get_status_opts
+            else:
+                # show only open cases (default)
                 CASES = CURRENT
                 query &= (FS("dvr_case.status_id$is_closed") == False) | \
                          (FS("dvr_case.status_id$is_closed") == None)
                 status_opts = lambda: get_status_opts(closed=False)
-            else:
-                status_opts = get_status_opts
 
             resource.add_filter(query)
         else:
@@ -605,6 +608,13 @@ def case():
 def case_flag():
     """ Case Flags: RESTful CRUD Controller """
 
+    def prep(r):
+        if settings.get_dvr_case_event_types_org_specific():
+            s3db.org_restrict_for_organisations(r.resource)
+
+        return True
+    s3.prep = prep
+
     return crud_controller()
 
 # -----------------------------------------------------------------------------
@@ -905,7 +915,7 @@ def termination_type():
 
     def prep(r):
 
-        if settings.get_dvr_activity_use_service_type() and \
+        if settings.get_dvr_case_activity_use_service_type() and \
            settings.get_org_services_hierarchical():
 
             # Limit the selection to root services (case activity
@@ -1067,6 +1077,13 @@ def case_appointment():
 def case_appointment_type():
     """ Appointment Type: RESTful CRUD Controller """
 
+    def prep(r):
+        if settings.get_dvr_case_event_types_org_specific():
+            s3db.org_restrict_for_organisations(r.resource)
+
+        return True
+    s3.prep = prep
+
     return crud_controller()
 
 # =============================================================================
@@ -1094,6 +1111,13 @@ def case_event():
 # -----------------------------------------------------------------------------
 def case_event_type():
     """ Case Event Types: RESTful CRUD Controller """
+
+    def prep(r):
+        if settings.get_dvr_case_event_types_org_specific():
+            s3db.org_restrict_for_organisations(r.resource)
+
+        return True
+    s3.prep = prep
 
     return crud_controller()
 

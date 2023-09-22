@@ -385,7 +385,9 @@ class CRShelterModel(DataModel):
                   deduplicate = S3Duplicate(),
                   filter_widgets = filter_widgets,
                   list_fields = list_fields,
+                  onvalidation = self.shelter_onvalidation,
                   onaccept = self.shelter_onaccept,
+                  orderby = "%s.name" % tablename,
                   report_options = Storage(
                         rows = report_fields,
                         cols = report_fields,
@@ -477,6 +479,48 @@ class CRShelterModel(DataModel):
 
         return {"cr_shelter_id": FieldTemplate.dummy("shelter_id"),
                 }
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def shelter_onvalidation(form):
+        """
+            Shelter form validation
+                - prevent status=closed while there are still people registered
+                  as checked-in (if managing registrations)
+        """
+
+        T = current.T
+
+        db = current.db
+        s3db = current.s3db
+
+        if current.deployment_settings.get_cr_shelter_registration():
+
+            record = form.record if hasattr(form, "record") else None
+            record_id = get_form_record_id(form)
+
+            form_vars = form.vars
+
+            status = form_vars.get("status")
+            if record_id and str(status) == "1": # closed
+
+                # Determine previous status
+                if not record or "status" not in record:
+                    table = s3db.cr_shelter
+                    record = db(table.id == record_id).select(table.status,
+                                                              limitby = (0, 1),
+                                                              ).first()
+                old_status = record.status if record else None
+
+                # If changing to "closed", verify that there are no more people checked-in
+                if record and status != old_status:
+                    rtable = s3db.cr_shelter_registration
+                    query = (rtable.shelter_id == record_id) & \
+                            (rtable.registration_status == 2) & \
+                            (rtable.deleted == False)
+                    row = db(query).select(rtable.id, limitby=(0, 1)).first()
+                    if row:
+                        form.errors.status = T("Shelter is currently occupied and cannot be closed")
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -822,6 +866,7 @@ class CRShelterUnitModel(DataModel):
                                        ],
                        onaccept = self.shelter_unit_onaccept,
                        ondelete = self.shelter_unit_ondelete,
+                       orderby = "%s.name" % tablename,
                        )
 
         # Reusable Field
@@ -1785,6 +1830,8 @@ class CRShelterRegistrationModel(DataModel):
             Checks if the housing unit belongs to the requested shelter
         """
 
+        T = current.T
+
         db = current.db
         s3db = current.s3db
 
@@ -1815,6 +1862,7 @@ class CRShelterRegistrationModel(DataModel):
                 value = table[fn].default
             return value
 
+        registration_status = get_field_value("registration_status")
         shelter_id = get_field_value("shelter_id")
         shelter_unit_id = get_field_value("shelter_unit_id")
 
@@ -1822,25 +1870,52 @@ class CRShelterRegistrationModel(DataModel):
             # Lookup from record
             row = db(table.id == record_id).select(*lookup, limitby=(0, 1)).first()
             if row:
+                if "registration_status" in row:
+                    registration_status = row.registration_status
                 if "shelter_id" in row:
                     shelter_id = row.shelter_id
                 if "shelter_unit_id" in row:
                     shelter_unit_id = row.shelter_unit_id
 
+        stable = s3db.cr_shelter
+        utable = s3db.cr_shelter_unit
+
         if shelter_id and shelter_unit_id:
             # Verify that they match
-            utable = s3db.cr_shelter_unit
-            row = db(utable.id == shelter_unit_id).select(utable.shelter_id,
-                                                          limitby = (0, 1),
-                                                          ).first()
-            if row and row.shelter_id != shelter_id:
-                msg = current.T("You have to select a housing unit belonging to the shelter")
+            query = (utable.id == shelter_unit_id) & \
+                    (utable.shelter_id == shelter_id)
+            row = db(query).select(utable.id, limitby=(0, 1)).first()
+            if not row:
+                msg = T("You have to select a housing unit belonging to the shelter")
                 form.errors.shelter_unit_id = msg
 
         elif not shelter_id and not shelter_unit_id:
-            msg = current.T("Shelter or housing unit required")
+            # Missing data
+            msg = T("Shelter or housing unit required")
             form.errors.shelter_id = \
             form.errors.shelter_unit_id = msg
+
+        if str(registration_status) != "3":
+            # Verify that the shelter is open when attempting to check-in people
+            if shelter_id:
+                query = (stable.id == shelter_id)
+            elif shelter_unit_id:
+                query = (stable.id == utable.shelter_id) & \
+                        (utable.id == shelter_unit_id)
+            else:
+                query = None
+            if query:
+                row = db(query).select(stable.status, limitby=(0, 1)).first()
+            else:
+                row = None
+
+            if row and row.status == 1:
+                msg = T("Shelter is closed")
+                if "registration_status" in form_vars:
+                    form.errors.registration_status = msg
+                else:
+                    form.errors.shelter_id = \
+                    form.errors.shelter_unit_id = msg
 
     # -------------------------------------------------------------------------
     @classmethod
@@ -1934,7 +2009,9 @@ class CRShelterRegistrationModel(DataModel):
         else:
             effective_date = registration.modified_on
 
+        # Status change?
         if current_status != previous_status:
+
             # Insert new history entry
             htable.insert(previous_status = previous_status,
                           status = current_status,
@@ -1942,6 +2019,17 @@ class CRShelterRegistrationModel(DataModel):
                           person_id = person_id,
                           shelter_id = shelter_id,
                           )
+
+            if current_status == 3: # checked-out
+
+                # Look up site_id of shelter
+                stable = s3db.cr_shelter
+                shelter = db(stable.id==shelter_id).select(stable.site_id,
+                                                           limitby = (0, 1),
+                                                           ).first()
+                # Register a CHECKOUT-event
+                if shelter and shelter.site_id:
+                    SitePresence.register(person_id, shelter.site_id, "CHECKOUT")
 
         # Update registration
         if current_status != 3:

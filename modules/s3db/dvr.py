@@ -788,6 +788,7 @@ class DVRCaseModel(DataModel):
     def case_onaccept(form, create=False):
         """
             Case onaccept routine:
+                - set/remove closed-on date according to status
                 - auto-create active appointments
                 - count household size for new cases
 
@@ -798,6 +799,8 @@ class DVRCaseModel(DataModel):
 
         db = current.db
         s3db = current.s3db
+
+        settings = current.deployment_settings
 
         # Read form data
         form_vars = form.vars
@@ -814,6 +817,7 @@ class DVRCaseModel(DataModel):
         left = stable.on(stable.id == ctable.status_id)
         query = (ctable.id == record_id)
         row = db(query).select(ctable.id,
+                               ctable.organisation_id,
                                ctable.person_id,
                                ctable.closed_on,
                                stable.is_closed,
@@ -822,32 +826,45 @@ class DVRCaseModel(DataModel):
                                ).first()
         if not row:
             return
-
-        # Update closed_on date
         case = row.dvr_case
+
+        # Update closed_on date when status is closed
         if row.dvr_case_status.is_closed:
             if not case.closed_on:
                 case.update_record(closed_on = current.request.utcnow.date())
         elif case.closed_on:
             case.update_record(closed_on = None)
 
-        # Get the person ID
         person_id = case.person_id
+        organisation_id = case.organisation_id
 
-        atable = s3db.dvr_case_appointment
-        ttable = s3db.dvr_case_appointment_type
-        left = atable.on((atable.type_id == ttable.id) &
-                         (atable.person_id == person_id) &
-                         (atable.deleted != True))
-        query = (atable.id == None) & \
-                (ttable.active == True) & \
-                (ttable.deleted != True)
-        rows = db(query).select(ttable.id, left=left)
-        for row in rows:
-            atable.insert(case_id = record_id,
-                          person_id = person_id,
-                          type_id = row.id,
-                          )
+        # Auto-create active appointments
+        org_specific = settings.get_dvr_appointment_types_org_specific()
+        if not org_specific or org_specific and organisation_id:
+
+            # Get types for which there is no appointment in this case yet
+            atable = s3db.dvr_case_appointment
+            ttable = s3db.dvr_case_appointment_type
+            left = atable.on((atable.type_id == ttable.id) &
+                             (atable.person_id == person_id) &
+                             (atable.deleted == False))
+            query = (atable.id == None) & (ttable.active == True)
+            if org_specific:
+                query &= (ttable.organisation_id == organisation_id)
+            query &= (ttable.deleted == False)
+            rows = db(query).select(ttable.id, left=left)
+
+            # Create the missing appointments with defaults
+            set_record_owner = current.auth.s3_set_record_owner
+            for row in rows:
+                appointment = {"case_id": case.id,
+                               "person_id": person_id,
+                               "type_id": row.id,
+                               }
+                appointment["id"] = atable.insert(**appointment)
+                s3db.update_super(atable, appointment)
+                set_record_owner(atable, appointment)
+                s3db.onaccept(atable, appointment, method="create")
 
         if create and \
            current.deployment_settings.get_dvr_household_size() == "auto":
@@ -856,7 +873,7 @@ class DVRCaseModel(DataModel):
             gtable = s3db.pr_group
             mtable = s3db.pr_group_membership
             query = ((mtable.person_id == person_id) & \
-                     (mtable.deleted != True) & \
+                     (mtable.deleted == False) & \
                      (gtable.id == mtable.group_id) & \
                      (gtable.group_type == 7))
             rows = db(query).select(gtable.id)
@@ -882,6 +899,7 @@ class DVRCaseFlagModel(DataModel):
         configure = self.configure
         define_table = self.define_table
 
+        flags_org_specific = settings.get_dvr_case_flags_org_specific()
         manage_transferability = settings.get_dvr_manage_transferability()
 
         # ---------------------------------------------------------------------
@@ -889,10 +907,16 @@ class DVRCaseFlagModel(DataModel):
         #
         tablename = "dvr_case_flag"
         define_table(tablename,
+                     self.org_organisation_id(
+                         comment = None,
+                         readable = flags_org_specific,
+                         writable = flags_org_specific,
+                         ),
                      Field("name",
                            label = T("Name"),
                            requires = [IS_NOT_EMPTY(), IS_LENGTH(512, minsize=1)],
                            ),
+                     # TODO rename into advise_at_reception
                      Field("advise_at_check_in", "boolean",
                            default = False,
                            label = T("Advice at Check-in"),
@@ -903,6 +927,7 @@ class DVRCaseFlagModel(DataModel):
                                                              ),
                                          ),
                            ),
+                     # TODO deprecate in favor of single field
                      Field("advise_at_check_out", "boolean",
                            default = False,
                            label = T("Advice at Check-out"),
@@ -913,6 +938,7 @@ class DVRCaseFlagModel(DataModel):
                                                              ),
                                          ),
                            ),
+                     # TODO rename into advice_at_checkpoint
                      Field("advise_at_id_check", "boolean",
                            default = False,
                            label = T("Advice at ID Check"),
@@ -932,6 +958,7 @@ class DVRCaseFlagModel(DataModel):
                                                              ),
                                          ),
                            ),
+                     # TODO rename into deny_entry
                      Field("deny_check_in", "boolean",
                            default = False,
                            label = T("Deny Check-in"),
@@ -942,6 +969,7 @@ class DVRCaseFlagModel(DataModel):
                                                              ),
                                          ),
                            ),
+                     # TODO rename into deny_leaving
                      Field("deny_check_out", "boolean",
                            default = False,
                            label = T("Deny Check-out"),
@@ -952,16 +980,21 @@ class DVRCaseFlagModel(DataModel):
                                                              ),
                                          ),
                            ),
+                     # TODO rename into payments_suspended
                      Field("allowance_suspended", "boolean",
                            default = False,
                            label = T("Allowance Suspended"),
                            represent = s3_yes_no_represent,
+                           # TODO setting to control this field
+                           readable = False,
+                           writable = False,
                            comment = DIV(_class = "tooltip",
                                          _title = "%s|%s" % (T("Allowance Suspended"),
                                                              T("Person shall not receive allowance payments when this flag is set"),
                                                              ),
                                          ),
                            ),
+                     # TODO deprecate
                      Field("is_not_transferable", "boolean",
                            default = False,
                            label = T("Not Transferable"),
@@ -984,10 +1017,20 @@ class DVRCaseFlagModel(DataModel):
                                                              ),
                                          ),
                            ),
+                     Field("color",
+                           requires = IS_EMPTY_OR(IS_HTML_COLOUR()),
+                           widget = S3ColorPickerWidget(),
+                           # TODO Disabled until represent method is ready
+                           readable = False,
+                           writable = False,
+                           ),
+                     # TODO Ambiguous field - deprecate or move into relevant template
                      Field("nostats", "boolean",
                            default = False,
                            label = T("Exclude from Reports"),
                            represent = s3_yes_no_represent,
+                           readable = False,
+                           writable = False,
                            comment = DIV(_class = "tooltip",
                                          _title = "%s|%s" % (T("Exclude from Reports"),
                                                              T("Exclude cases with this flag from certain reports"),
@@ -996,6 +1039,31 @@ class DVRCaseFlagModel(DataModel):
                            ),
                      CommentsField(),
                      )
+
+        # List fields
+        list_fields = ["id",
+                       #"organisation_id",
+                       "name",
+                       "advise_at_check_in",
+                       "advise_at_check_out",
+                       "advise_at_id_check",
+                       "deny_check_in",
+                       "deny_check_out",
+                       "is_external",
+                       "comments",
+                       ]
+        if flags_org_specific:
+            list_fields.insert(1, "organisation_id")
+
+        # Table configuration
+        configure(tablename,
+                  list_fields = list_fields,
+                  update_realm = True,
+                  deduplicate = S3Duplicate(primary = ("name",),
+                                            secondary = ("organisation_id",),
+                                            ignore_deleted = True,
+                                            ),
+                  )
 
         # CRUD Strings
         ADD_FLAG = T("Create Case Flag")
@@ -1011,12 +1079,6 @@ class DVRCaseFlagModel(DataModel):
             msg_record_deleted = T("Case Flag deleted"),
             msg_list_empty = T("No Case Flags found"),
             )
-
-        # Table configuration
-        configure(tablename,
-                  deduplicate = S3Duplicate(ignore_deleted = True,
-                                            ),
-                  )
 
         # Reusable field
         represent = S3Represent(lookup=tablename, translate=True)
@@ -2470,8 +2532,8 @@ class DVRCaseActivityModel(DataModel):
         configure = self.configure
         define_table = self.define_table
 
-        service_type = settings.get_dvr_activity_use_service_type()
-        activity_sectors = settings.get_dvr_activity_sectors()
+        service_type = settings.get_dvr_case_activity_use_service_type()
+        case_activity_sectors = settings.get_dvr_case_activity_sectors()
 
         service_id = self.org_service_id
         project_id = self.project_project_id
@@ -2731,8 +2793,8 @@ class DVRCaseActivityModel(DataModel):
                                        ),
 
                      # Categories (activate in template as needed)
-                     self.org_sector_id(readable = activity_sectors,
-                                        writable = activity_sectors,
+                     self.org_sector_id(readable = case_activity_sectors,
+                                        writable = case_activity_sectors,
                                         ),
                      service_id(label = T("Service Type"),
                                 ondelete = "RESTRICT",
@@ -3421,6 +3483,7 @@ class DVRCaseAppointmentModel(DataModel):
         configure = self.configure
         define_table = self.define_table
 
+        appointment_types_org_specific = settings.get_dvr_appointment_types_org_specific()
         mandatory_appointments = settings.get_dvr_mandatory_appointments()
         update_case_status = settings.get_dvr_appointments_update_case_status()
         update_last_seen_on = settings.get_dvr_appointments_update_last_seen_on()
@@ -3436,6 +3499,11 @@ class DVRCaseAppointmentModel(DataModel):
 
         tablename = "dvr_case_appointment_type"
         define_table(tablename,
+                     self.org_organisation_id(
+                         comment = None,
+                         readable = appointment_types_org_specific,
+                         writable = appointment_types_org_specific,
+                         ),
                      Field("name", length=64, notnull=True, unique=True,
                            requires = [IS_NOT_EMPTY(),
                                        IS_LENGTH(64, minsize=1),
@@ -3498,6 +3566,15 @@ class DVRCaseAppointmentModel(DataModel):
                      CommentsField(),
                      )
 
+        # Table configuration
+        configure(tablename,
+                  update_realm = True,
+                  deduplicate = S3Duplicate(primary = ("name",),
+                                            secondary = ("organisation_id",),
+                                            ignore_deleted = True,
+                                            ),
+                  )
+
         # CRUD Strings
         crud_strings[tablename] = Storage(
             label_create = T("Create Appointment Type"),
@@ -3543,6 +3620,7 @@ class DVRCaseAppointmentModel(DataModel):
                                       #empty = False,
                                       label = T("Case Number"),
                                       ondelete = "CASCADE",
+                                      readable = False,
                                       writable = False,
                                       ),
                      # Beneficiary (component link):
@@ -4190,17 +4268,22 @@ class DVRCaseEventModel(DataModel):
         role_table = str(current.auth.settings.table_group)
         role_represent = S3Represent(lookup=role_table, fields=("role",))
 
+        event_types_org_specific = settings.get_dvr_case_event_types_org_specific()
         close_appointments = settings.get_dvr_case_events_close_appointments()
 
         tablename = "dvr_case_event_type"
         define_table(tablename,
-                     Field("code", notnull=True, length=64, unique=True,
+                     self.org_organisation_id(
+                         comment = None,
+                         readble = event_types_org_specific,
+                         writable = event_types_org_specific,
+                         ),
+                     # TODO Deprecate? (replace by event class)
+                     Field("code", length=64, # notnull=True, unique=True,
                            label = T("Code"),
                            requires = [IS_NOT_EMPTY(),
                                        IS_LENGTH(64, minsize=1),
-                                       IS_NOT_ONE_OF(db,
-                                                     "dvr_case_event_type.code",
-                                                     ),
+                                       #IS_NOT_ONE_OF(db, "dvr_case_event_type.code"),
                                        ],
                            ),
                      Field("name",
@@ -4294,6 +4377,10 @@ class DVRCaseEventModel(DataModel):
 
         # Table Configuration
         configure(tablename,
+                  deduplicate = S3Duplicate(primary = ("code", "name"),
+                                            secondary = ("organisation_id",),
+                                            ignore_deleted = True,
+                                            ),
                   onaccept = self.case_event_type_onaccept,
                   )
 

@@ -59,6 +59,7 @@ __all__ = ("OrgOrganisationModel",
            "org_root_organisation",
            "org_root_organisation_name",
            "org_organisation_requires",
+           "org_restrict_for_organisations",
            "org_region_options",
            "org_rheader",
            "org_site_staff_config",
@@ -3895,6 +3896,13 @@ class OrgSitePresenceModel(DataModel):
         event_types = {"IN": T("Entering"),
                        "OUT": T("Leaving"),
                        "SEEN": T("Seen"),
+                       # Presence events without observation (i.e. those do not
+                       # imply that the person was physically present at the
+                       # time of the event):
+                       # NOTFOUND: person could not be found at the site during a search
+                       # CHECKOUT: person is declared as having left the site permanently
+                       "NOTFOUND": T("Not found##presence"),
+                       "CHECKOUT": T("Checked-out"),
                        }
         tablename = "org_site_presence_event"
         define_table(tablename,
@@ -4024,17 +4032,21 @@ class OrgSitePresenceModel(DataModel):
 
         # Update the record date+vhash
         record.update_record(date=now, vhash=vhash)
+        event_type = record.event_type
 
         # Create/update presence record(s)
         ptable = s3db.org_site_presence
 
-        # Register as OUT at all sites where the person is currently
-        # registered as IN, other than the event site
-        query = (ptable.person_id == record.person_id) & \
-                (ptable.site_id != record.site_id) & \
-                (ptable.status == "IN") & \
-                (ptable.deleted == False)
-        db(query).update(status="OUT", date=now, event_id=record.id)
+        if event_type in ("IN", "OUT", "SEEN"):
+            # These events imply actual observation of presence:
+            # => register as OUT at all sites where the person is currently
+            #    registered as IN, other than the event site (as they cannot
+            #    be in multiple places at once)
+            query = (ptable.person_id == record.person_id) & \
+                    (ptable.site_id != record.site_id) & \
+                    (ptable.status == "IN") & \
+                    (ptable.deleted == False)
+            db(query).update(status="OUT", date=now, event_id=record.id)
 
         # Get the presence record for the event site
         query = (ptable.person_id == record.person_id) & \
@@ -4048,11 +4060,13 @@ class OrgSitePresenceModel(DataModel):
 
         # Update presence at the site
         # Notes:
-        #    - multiple consecutive IN will retain the earliest IN date
-        #    - multiple consecutive OUT will update to the latest OUT date
+        #    - IN/NOTFOUND/CHECKOUT will update the presence date only
+        #      if the status changes (tracking earliest date), whereas
+        #      OUT will always update the presence date
         #    - a SEEN event does not change presence status/date at the site
         #    - the tracking reference (event_id) will always be updated
-        new_status = "IN" if record.event_type == "IN" else "OUT"
+        track_earliest = ("IN", "NOTFOUND", "CHECKOUT")
+        new_status = "IN" if event_type == "IN" else "OUT"
         if not presence:
             # Create new presence record
             presence = {"person_id": record.person_id,
@@ -4066,9 +4080,9 @@ class OrgSitePresenceModel(DataModel):
             current.auth.s3_set_record_owner(ptable, presence)
             s3db.onaccept(ptable, presence, method="create")
 
-        elif record.event_type == "IN" and presence.status != new_status or \
-             record.event_type == "OUT":
-            # Update the presence record according to this movement
+        elif event_type in track_earliest and presence.status != new_status or \
+             event_type == "OUT":
+            # Update the presence record according to this event
             presence.update_record(date = now,
                                    status = new_status,
                                    event_id = record.id,
@@ -5639,6 +5653,71 @@ def org_organisation_requires(required = False,
     return requires
 
 # =============================================================================
+def org_restrict_for_organisations(resource):
+    """
+        Restricts an organisation-specific resource to those organisations
+        the user is permitted to create new records for; for use in prep(),
+        multi-tenancy support
+
+        Args:
+            resource: the resource
+        Returns:
+            the default organisation_id, if any - otherwise None
+
+        Note:
+            If the user has site-wide permissions, or realms are not used,
+            this function does nothing.
+    """
+
+    db = current.db
+    s3db = current.s3db
+    auth = current.auth
+
+    table = resource.table
+    tablename = resource.tablename
+
+    default = None
+
+    realms = auth.permission.permitted_realms(tablename, "create")
+    if realms is not None:
+        # Restricted to realms
+
+        # Filter out any with organisation_id=None
+        resource.add_filter(FS("organisation_id") != None)
+
+        # Look up the organisations
+        otable = s3db.org_organisation
+        query = (otable.pe_id.belongs(realms)) & \
+                (otable.deleted == False)
+        dbset = db(query)
+
+        field = table.organisation_id
+        field.readable = True
+
+        num_orgs = dbset.count()
+        if not num_orgs:
+            # Not permitted for any organisations
+            resource.configure(insertable=False)
+            field.writable = False
+        elif num_orgs == 1:
+            # Permitted for exactly one organisation
+            default_org = dbset.select(otable.id, limitby=(0, 1)).first()
+            field.default = default = default_org.id
+            field.writable = False
+        else:
+            # Permitted for multiple organisations
+            requires = IS_ONE_OF(dbset, "org_organisation.id",
+                                 field.represent,
+                                 )
+            if isinstance(field.requires, IS_EMPTY_OR):
+                field.requires = IS_EMPTY_OR(requires)
+            else:
+                field.requires = requires
+            field.writable = True
+
+    return default
+
+# =============================================================================
 def org_region_options(zones=False):
     """
         Get all options for region IDs
@@ -6189,7 +6268,7 @@ class org_SiteCheckInMethod(CRUDMethod):
 
         # Configure label input
         label_input = self.label_input
-        use_qr_code = settings.get_org_site_check_in_qrcode()
+        use_qr_code = settings.get_org_site_presence_qrcode()
         if use_qr_code:
             if use_qr_code is True:
                 label_input = S3QRInput()
