@@ -148,6 +148,7 @@ class PresenceRegistration(CRUDMethod):
                 person_data = self.ajax_data(person, status)
 
         # Configure label input
+        validate_serverside = bool(settings.get_org_site_presence_validate_id())
         label_input = self.label_input
         use_qr_code = settings.get_org_site_presence_qrcode()
         if use_qr_code:
@@ -158,6 +159,7 @@ class PresenceRegistration(CRUDMethod):
                 label_input = S3QRInput(placeholder = T("Enter or scan ID"),
                                         pattern = pattern,
                                         index = index,
+                                        keep_original = validate_serverside,
                                         )
 
         # Standard form fields and data
@@ -255,6 +257,7 @@ class PresenceRegistration(CRUDMethod):
                    "statusOut": s3_str(label_out),
                    "statusNone": "-",
                    "statusLabel": s3_str(T("Status")),
+                   "sendOriginalQRInput": validate_serverside,
                    }
         self.inject_js(widget_id, options)
 
@@ -329,8 +332,6 @@ class PresenceRegistration(CRUDMethod):
 
         site_id = record.site_id
 
-        # TODO User must be present at the site
-
         # Load JSON data from request body
         s = r.body
         s.seek(0)
@@ -352,10 +353,18 @@ class PresenceRegistration(CRUDMethod):
 
         # Identify the person
         label = data.get("l")
-        person = self.get_person(label)
+        validate = current.deployment_settings.get_org_site_presence_validate_id()
+        if callable(validate):
+            label, advice, error = validate(label)
+            person = self.get_person(label) if label else None
+            if advice:
+                output["q"] = s3_str(advice)
+        else:
+            person = self.get_person(label)
 
         if person is None:
-            error = T("No person found with this ID number")
+            if not error:
+                error = T("No person found with this ID number")
         else:
             status = self.status(resource.tablename, site_id, person)
             if not status.get("valid"):
@@ -370,52 +379,54 @@ class PresenceRegistration(CRUDMethod):
                 output.update(ajax_data)
 
             elif method == "IN":
+                current_status = status.get("status")
                 check_in_allowed = status.get("allowed_in")
 
                 if not check_in_allowed or status.get("info") is not None:
                     ajax_data = self.ajax_data(person, status)
                     output.update(ajax_data)
 
-                current_status = status.get("status")
-                if current_status != "IN" and not check_in_allowed:
+                success = False
+                if check_in_allowed:
+                    success = SitePresence.register(person.id, site_id, "IN")
+                if success:
+                    output["s"] = "IN"
+                    if current_status == "IN":
+                        alert = T("Person was already registered as present")
+                        alert_type = "warning"
+                    else:
+                        alert = T("Presence registered")
+                elif check_in_allowed is False:
                     alert = T("Person not permitted to enter premises!")
                     alert_type = "error"
                 else:
-                    success = SitePresence.register(person.id, site_id, "IN")
-                    if success:
-                        output["s"] = "IN"
-                        if current_status == "IN":
-                            alert = T("Person was already registered as present")
-                            alert_type = "warning"
-                        else:
-                            alert = T("Presence registered")
-                    else:
-                        alert = T("Registration failed!")
-                        alert_type = "error"
+                    alert = T("Registration failed!")
+                    alert_type = "error"
 
             elif method == "OUT":
+                current_status = status.get("status")
                 check_out_allowed = status.get("allowed_out")
 
                 if not check_out_allowed or status.get("info") is not None:
                     ajax_data = self.ajax_data(person, status)
                     output.update(ajax_data)
 
-                current_status = status.get("status")
-                if current_status != "OUT" and not check_out_allowed:
+                success = False
+                if check_out_allowed:
+                    success = SitePresence.register(person.id, site_id, "OUT")
+                if success:
+                    output["s"] = "OUT"
+                    if current_status == "OUT":
+                        alert = T("Person was already registered as absent")
+                        alert_type = "warning"
+                    else:
+                        alert = T("Absence registered")
+                elif check_out_allowed is False:
                     alert = T("Person not permitted to leave premises!")
                     alert_type = "error"
                 else:
-                    success = SitePresence.register(person.id, site_id, "OUT")
-                    if success:
-                        output["s"] = "OUT"
-                        if current_status == "OUT":
-                            alert = T("Person was already registered as absent")
-                            alert_type = "warning"
-                        else:
-                            alert = T("Absence registered")
-                    else:
-                        alert = T("Registration failed!")
-                        alert_type = "error"
+                    alert = T("Registration failed!")
+                    alert_type = "error"
             else:
                 r.error(405, current.ERROR.BAD_METHOD)
 
@@ -470,6 +481,9 @@ class PresenceRegistration(CRUDMethod):
                 label: the PE label
         """
 
+        if not label:
+            return None
+
         # Fields to extract
         fields = ["id",
                   "pe_id",
@@ -484,7 +498,7 @@ class PresenceRegistration(CRUDMethod):
 
         presource = current.s3db.resource("pr_person",
                                           components = [],
-                                          filter = (FS("pe_label") == label),
+                                          filter = (FS("pe_label").upper() == label.upper()),
                                           )
         rows = presource.select(fields, limit=1, as_rows=True)
 

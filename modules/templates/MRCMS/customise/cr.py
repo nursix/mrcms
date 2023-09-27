@@ -116,7 +116,7 @@ def client_site_status(person_id, site_id, site_type, case_status):
     return result
 
 # -------------------------------------------------------------------------
-def staff_site_status(person_id, organisation_ids):
+def staff_site_status(person_id, site_id, organisation_ids):
     """
         Check whether a person to register at a site is a staff member
 
@@ -212,7 +212,7 @@ def person_site_status(site_id, person):
                             limitby = (0, 1),
                             ).first()
 
-    if case.dvr_case.id:
+    if case and case.dvr_case.id:
         # Is a client
         result.update(client_site_status(person_id,
                                          site_id,
@@ -224,11 +224,33 @@ def person_site_status(site_id, person):
     else:
         # May be a staff member
         result.update(staff_site_status(person_id,
+                                        site_id,
                                         organisation_ids,
                                         ))
         if not result["valid"] and not result.get("error"):
-            result["error"] = T("Neither currently a resident nor active staff member")
+            # Neither resident nor active staff member, so invalid ID
+            result["error"] = T("Invalid ID")
 
+    if result["valid"] and not result.get("error"):
+
+        auth = current.auth
+        instructions = None
+
+        uperson_id = auth.s3_logged_in_person()
+        if uperson_id == person_id:
+            if not auth.s3_has_roles(("ORG_ADMIN", "SECURITY")):
+                result["allowed_in"] = None
+                instructions = T("Self-registration not permitted. Please register with authorized staff at the site.")
+        elif not PresenceRegistration.present(site_id):
+            result["allowed_in"] = result["allowed_out"] = None
+            instructions = T("You must be reported as present at the site yourself in order to register the presence of others.")
+
+        if instructions:
+            result["info"] = DIV(DIV(P(instructions),
+                                     _class="checkpoint-instructions",
+                                     ),
+                                 _class="checkpoint-advise",
+                                 )
     return result
 
 # -------------------------------------------------------------------------
@@ -312,12 +334,12 @@ def cr_shelter_controller(**attr):
                     s3db.configure("cr_shelter",
                                    profile_layers = profile_layers,
                                    )
-            else:
-                has_role = current.auth.s3_has_role
-                if has_role("SECURITY") and not has_role("ADMIN"):
-                    # Security can access nothing in cr/shelter except
-                    # Dashboard and Check-in/out UI
-                    current.auth.permission.fail()
+            #else:
+                #has_role = current.auth.s3_has_role
+                #if has_role("SECURITY") and not has_role("ADMIN"):
+                #    # Security can access nothing in cr/shelter except
+                #    # Dashboard and Check-in/out UI
+                #    current.auth.permission.fail()
 
             if r.interactive:
                 # TODO should also be deletable while there are no shelter registrations
