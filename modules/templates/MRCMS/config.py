@@ -122,10 +122,6 @@ def config(settings):
     #
     settings.ui.calendar_clear_icon = True
 
-    from .customise.cr import profile_header
-
-    settings.ui.profile_header = profile_header
-
     # -------------------------------------------------------------------------
     # AUTH Settings
     #
@@ -148,6 +144,7 @@ def config(settings):
                                       }
 
     settings.auth.realm_entity = realm_entity
+    settings.auth.registration_roles = {None: ["STAFF"]}
     settings.customise_auth_user_resource = auth_user_resource
 
     # -------------------------------------------------------------------------
@@ -171,6 +168,7 @@ def config(settings):
     #
     settings.cr.shelter_population_dynamic = True
     settings.cr.shelter_units = True
+    settings.cr.shelter_blocked_capacity = True
 
     # Generate tasks for shelter inspections
     settings.cr.shelter_inspection_tasks = True
@@ -178,12 +176,14 @@ def config(settings):
 
     from .customise.cr import cr_shelter_resource, \
                               cr_shelter_controller, \
+                              cr_shelter_unit_resource, \
                               cr_shelter_unit_controller, \
                               cr_shelter_registration_resource, \
                               cr_shelter_registration_controller
 
     settings.customise_cr_shelter_resource = cr_shelter_resource
     settings.customise_cr_shelter_controller = cr_shelter_controller
+    settings.customise_cr_shelter_unit_resource = cr_shelter_unit_resource
     settings.customise_cr_shelter_unit_controller = cr_shelter_unit_controller
     settings.customise_cr_shelter_registration_resource = cr_shelter_registration_resource
     settings.customise_cr_shelter_registration_controller = cr_shelter_registration_controller
@@ -238,26 +238,32 @@ def config(settings):
     #settings.dvr.payments_update_last_seen_on = True
 
     from .customise.dvr import dvr_home, \
-                               dvr_allowance_controller, \
                                dvr_case_resource, \
                                dvr_case_activity_resource, \
                                dvr_case_activity_controller, \
+                               dvr_case_appointment_resource, \
                                dvr_case_appointment_controller, \
                                dvr_case_event_resource, \
                                dvr_case_event_controller, \
+                               dvr_case_appointment_type_controller, \
                                dvr_case_event_type_resource, \
+                               dvr_case_flag_controller, \
                                dvr_note_resource, \
                                dvr_site_activity_resource
 
     settings.customise_dvr_home = dvr_home
-    settings.customise_dvr_allowance_controller = dvr_allowance_controller
     settings.customise_dvr_case_resource = dvr_case_resource
     settings.customise_dvr_case_activity_resource = dvr_case_activity_resource
     settings.customise_dvr_case_activity_controller = dvr_case_activity_controller
+    settings.customise_dvr_case_appointment_resource = dvr_case_appointment_resource
     settings.customise_dvr_case_appointment_controller = dvr_case_appointment_controller
     settings.customise_dvr_case_event_resource = dvr_case_event_resource
     settings.customise_dvr_case_event_controller = dvr_case_event_controller
+
+    settings.customise_dvr_case_appointment_type_controller = dvr_case_appointment_type_controller
     settings.customise_dvr_case_event_type_resource = dvr_case_event_type_resource
+    settings.customise_dvr_case_flag_controller = dvr_case_flag_controller
+
     settings.customise_dvr_note_resource = dvr_note_resource
     settings.customise_dvr_site_activity_resource = dvr_site_activity_resource
 

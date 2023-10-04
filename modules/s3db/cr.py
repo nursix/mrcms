@@ -233,10 +233,10 @@ class CRShelterModel(DataModel):
                                 writable = not manage_units,
                                 ),
                      population("blocked_capacity",
-                                label = T("Non-assignable places"),
+                                label = T("Non-allocable places"),
                                 comment = DIV(_class="tooltip",
-                                              _title="%s|%s" % (T("Non-assignable places"),
-                                                                T("Number of places that are not currently assignable, e.g. due to technical issues, maintenance or closed groups"),
+                                              _title="%s|%s" % (T("Non-allocable places"),
+                                                                T("Number of places that are not currently allocable, e.g. due to technical issues, maintenance or closed groups"),
                                                                 ),
                                               ),
                                 readable = use_blocked_capacity,
@@ -370,18 +370,8 @@ class CRShelterModel(DataModel):
         filter_widgets.append(RangeFilter("capacity",
                                           label = T("Total Capacity"),
                                           ))
-
-        # Custom create_next
-        if settings.get_cr_shelter_registration():
-            # Go to People check-in for this shelter after creation
-            create_next = URL(c="cr", f="shelter",
-                              args=["[id]", "shelter_registration"])
-        else:
-            create_next = None
-
         # Table configuration
         configure(tablename,
-                  create_next = create_next,
                   deduplicate = S3Duplicate(),
                   filter_widgets = filter_widgets,
                   list_fields = list_fields,
@@ -749,6 +739,7 @@ class CRShelterUnitModel(DataModel):
         T = current.T
         db = current.db
         settings = current.deployment_settings
+        crud_strings = current.response.s3.crud_strings
 
         define_table = self.define_table
 
@@ -766,7 +757,7 @@ class CRShelterUnitModel(DataModel):
         # Housing units
         #
         cr_housing_unit_opts = {1: T("Available"),
-                                2: T("Not Available"),
+                                2: T("Not allocable"),
                                 }
 
         tablename = "cr_shelter_unit"
@@ -823,10 +814,10 @@ class CRShelterUnitModel(DataModel):
                                 label = T("Capacity"),
                                 ),
                      population("blocked_capacity",
-                                label = T("Non-assignable places"),
+                                label = T("Non-allocable places"),
                                 comment = DIV(_class="tooltip",
-                                              _title="%s|%s" % (T("Non-assignable places"),
-                                                                T("Number of places that are not currently assignable, e.g. due to technical issues, maintenance or closed groups"),
+                                              _title="%s|%s" % (T("Non-allocable places"),
+                                                                T("Number of places that are not currently allocable, e.g. due to technical issues, maintenance or closed groups"),
                                                                 ),
                                               ),
                                 readable = use_blocked_capacity,
@@ -868,6 +859,19 @@ class CRShelterUnitModel(DataModel):
                        ondelete = self.shelter_unit_ondelete,
                        orderby = "%s.name" % tablename,
                        )
+
+        # CRUD strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Create Housing Unit"),
+            title_display = T("Housing Unit Details"),
+            title_list = T("Housing Units"),
+            title_update = T("Edit Housing Unit"),
+            label_list_button = T("List Housing Units"),
+            msg_record_created = T("Housing Unit added"),
+            msg_record_modified = T("Housing Unit updated"),
+            msg_record_deleted = T("Housing Unit deleted"),
+            msg_list_empty = T("No Housing Units currently registered"),
+            )
 
         # Reusable Field
         represent = S3Represent(lookup="cr_shelter_unit")
@@ -915,14 +919,28 @@ class CRShelterUnitModel(DataModel):
         if not record_id:
             return
 
-        HousingUnit(record_id).update_population()
-
         table = current.s3db.cr_shelter_unit
         query = (table.id == record_id) & \
                 (table.deleted == False)
-        unit = current.db(query).select(table.shelter_id,
+        unit = current.db(query).select(table.id,
+                                        table.shelter_id,
+                                        table.capacity,
+                                        table.blocked_capacity,
                                         limitby = (0, 1),
                                         ).first()
+
+        # Fix capacity<=>blocked_capacity
+        capacity = unit.capacity
+        blocked_capacity = unit.blocked_capacity
+        if capacity is None:
+            if blocked_capacity is not None and blocked_capacity > 0:
+                unit.update_record(capacity=blocked_capacity)
+        else:
+            if blocked_capacity is not None and blocked_capacity > capacity:
+                unit.update_record(blocked_capacity=capacity)
+
+        HousingUnit(record_id).update_population()
+
         shelter_id = unit.shelter_id if unit else None
         if shelter_id:
             shelter = Shelter(shelter_id)
@@ -1062,7 +1080,7 @@ class CRShelterStatusModel(DataModel):
                                 label = T("Capacity"),
                                 ),
                      population("blocked_capacity",
-                                label = T("Non-assignable places"),
+                                label = T("Non-allocable places"),
                                 readable = use_blocked_capacity,
                                 ),
                      CommentsField(),

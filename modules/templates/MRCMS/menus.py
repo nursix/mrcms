@@ -213,13 +213,8 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
             menu = M(c="cr")(
                         M("Shelter", f="shelter", args=[shelter_id], ignore_args=True)(
-                            M("Overview",
-                            args = [shelter_id, "profile"],
-                            ),
-                            M("Housing Units",
-                            t = "cr_shelter_unit",
-                            args = [shelter_id, "shelter_unit"],
-                            ),
+                            M("Overview", m="overview", args=[shelter_id]),
+                            M("Housing Units", t="cr_shelter_unit", args=[shelter_id, "shelter_unit"]),
                         ),
                         #M("Room Inspection", f = "shelter", link=False)(
                         #    M("Register",
@@ -305,7 +300,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
                         vars={"closed": "only"},
                         ),
                     M("Invalid Cases", f="person",
-                        vars={"archived": "1"},
+                        vars={"archived": "1", "closed": "1"},
                         restrict = (ADMIN, ORG_ADMIN),
                         ),
                     ),

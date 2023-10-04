@@ -157,14 +157,24 @@ def pr_person_resource(r, tablename):
     # only limited write-access to basic details of residents
     if r.controller == "dvr" and not has_permission("create", "pr_person"):
 
-        # Can not write any fields in main person record
-        # (fields in components may still be writable, though)
+        # Cannot modify any fields in main person record
         ptable = s3db.pr_person
         for field in ptable:
             field.writable = False
 
-        # Can not add or modify contact or identity information
-        for tn in ("pr_contact", "pr_identity", "pr_image"):
+        # Cannot modify certain details
+        dtable = s3db.pr_person_details
+        for fn in ("nationality", "marital_status"):
+            dtable[fn].writable = False
+
+        # Can not add or modify contact or identity information,
+        # images, tags or residence status
+        for tn in ("pr_contact",
+                   "pr_identity",
+                   "pr_image",
+                   "pr_person_tag",
+                   "dvr_residence_status",
+                   ):
             s3db.configure(tn,
                            insertable = False,
                            editable = False,
@@ -244,53 +254,6 @@ def get_case_organisation(person_id):
     return row.organisation_id if row else None
 
 # -------------------------------------------------------------------------
-def get_available_shelters(organisation_id, person_id=None):
-    """
-        The available shelters of the case organisation, to configure
-        inline shelter registration in case form
-
-        Args:
-            organisation_id: the ID of the case organisation
-            person_id: the person_id of the client
-
-        Returns:
-            list of shelter IDs
-
-        Note:
-            - includes the current shelter where the client is registered,
-              even if it is closed
-    """
-
-    db = current.db
-    s3db = current.s3db
-
-    # Get the current shelter registration for person_id
-    if person_id:
-        rtable = s3db.cr_shelter_registration
-        query = (rtable.person_id == person_id) & \
-                (rtable.deleted == False)
-        reg = db(query).select(rtable.shelter_id,
-                               limitby = (0, 1),
-                               orderby = ~rtable.id,
-                               ).first()
-        current_shelter = reg.shelter_id
-    else:
-        current_shelter = None
-
-    stable = s3db.cr_shelter
-    status_query = (stable.status == 2)
-    if current_shelter:
-        status_query |= (stable.id == current_shelter)
-
-    query = (stable.organisation_id == organisation_id) & \
-            status_query & \
-            (stable.deleted == False)
-    rows = db(query).select(stable.id)
-    shelters = [row.id for row in rows]
-
-    return shelters
-
-# -------------------------------------------------------------------------
 def configure_inline_shelter_registration(component, shelters, person_id=None):
     """
         Configure inline shelter registration in case form
@@ -346,7 +309,7 @@ $.filterOptionsS3({
                                        limitby = (0, 1),
                                        orderby = ~rtable.id,
                                        ).first()
-                current_unit = reg.shelter_unit_id
+                current_unit = reg.shelter_unit_id if reg else None
             else:
                 current_unit = None
 
@@ -374,6 +337,7 @@ def configure_case_form(resource,
                         shelters=None,
                         person_id=None,
                         privileged=False,
+                        administration=False,
                         cancel=False,
                         ):
     """
@@ -385,6 +349,7 @@ def configure_case_form(resource,
             shelters: the available shelters of the case organisation
             person_id: the person_id of the client
             privileged: whether the user has a privileged role
+            administration: whether the user has an administrative role
             cancel: whether the case is to be archived, and thence
                     the shelter registration to be canceled
 
@@ -402,22 +367,31 @@ def configure_case_form(resource,
     show_inline = configure_inline_shelter_registration(component, shelters, person_id)
 
     if cancel or not show_inline:
-        # Ignore registration data in form if the registration
-        # is to be cancelled - otherwise a new registration is
-        # created by the subform-processing right after
-        # dvr_case_onaccept deletes the current one:
+        # Ignore registration data in form if the registration is to be
+        # cancelled (i.e. case closed or marked as invalid) - otherwise
+        # the implicit cancelation (dvr_case_onaccept) is subsequently
+        # overridden by the subform processing:
         reg_shelter = None
         reg_unit_id = None
         reg_status = None
         reg_check_in_date = None
         reg_check_out_date = None
     else:
+        # Show shelter selector only if there are multiple alternatives,
+        # otherwise this will default (see configure_inline_shelter_registration)
         reg_shelter = "shelter_registration.shelter_id" \
                       if shelters and len(shelters) > 1 else None
         reg_unit_id = "shelter_registration.shelter_unit_id"
         reg_status = "shelter_registration.registration_status"
         reg_check_in_date = "shelter_registration.check_in_date"
         reg_check_out_date = "shelter_registration.check_out_date"
+
+    # Configure case component
+    component = resource.components.get("dvr_case")
+    if not administration:
+        field = component.table.archived
+        field.readable = False
+        field.writable = False
 
     # Filter flags for case organisation
     if organisation_id:
@@ -466,7 +440,6 @@ def configure_case_form(resource,
                         multiple = False,
                         name = "bamf",
                         ),
-                "dvr_case.valid_until",
 
                 S3SQLInlineComponent(
                         "residence_status",
@@ -752,6 +725,7 @@ def configure_dvr_person_controller(r, privileged=False, administration=False):
 
         # Determine available shelters and default
         if case_organisation:
+            from ..helpers import get_available_shelters
             shelters = get_available_shelters(case_organisation, person_id)
         else:
             shelters = None
@@ -811,6 +785,7 @@ def configure_dvr_person_controller(r, privileged=False, administration=False):
             # Configure case form
             configure_case_form(resource,
                                 privileged = privileged,
+                                administration = administration,
                                 cancel = cancel,
                                 shelters = shelters,
                                 organisation_id = case_organisation,
@@ -1120,6 +1095,15 @@ def configure_hrm_person_controller(r):
                        ]
         r.component.configure(list_fields=list_fields)
 
+    elif r.component_name == "image":
+
+        # Only OrgAdmin can modify staff photographs
+        if not current.auth.s3_has_role("ORG_ADMIN"):
+            r.component.configure(insertable = False,
+                                  editable = False,
+                                  deletable = False,
+                                  )
+
 # -------------------------------------------------------------------------
 def pr_person_controller(**attr):
 
@@ -1128,9 +1112,9 @@ def pr_person_controller(**attr):
     s3 = current.response.s3
 
     is_org_admin = auth.s3_has_role("ORG_ADMIN")
+    is_case_admin = auth.s3_has_role("CASE_ADMIN")
 
-    ADMINISTRATION = ("CASE_ADMIN",)
-    administration = is_org_admin or auth.s3_has_roles(ADMINISTRATION)
+    administration = is_org_admin or is_case_admin
 
     PRIVILEGED = ("CASE_MANAGER", "CASE_ASSISTANT")
     privileged = administration or auth.s3_has_roles(PRIVILEGED)
@@ -1211,29 +1195,44 @@ def pr_person_controller(**attr):
                                        )),
                           ]
 
-        if not r.component and r.record and isinstance(output, dict):
+        if r.record and isinstance(output, dict):
 
-            # Custom CRUD buttons
-            if "buttons" not in output:
-                buttons = output["buttons"] = {}
-            else:
-                buttons = output["buttons"]
+            # Generate-ID button (required appropriate role)
+            if r.controller == "dvr" and is_case_admin or \
+               r.controller == "hrm" and is_org_admin:
+                id_btn = A(T("Generate ID"),
+                           _href = r.url(component = "identity",
+                                         method = "generate",
+                                         ),
+                          _class = "action-btn activity button",
+                          )
+                if not r.component:
+                    if "buttons" not in output:
+                        buttons = output["buttons"] = {}
+                    else:
+                        buttons = output["buttons"]
+                    buttons["delete_btn"] = TAG[""](id_btn)
+                elif r.component_name == "identity":
+                    showadd_btn = output.get("showadd_btn")
+                    if showadd_btn:
+                        output["showadd_btn"] = TAG[""](id_btn, showadd_btn)
+                    else:
+                        output["showadd_btn"] = id_btn
 
-            # Button to generate ID
-            if administration and r.controller == "dvr" or \
-               is_org_admin and r.controller == "hrm":
-                card_button = A(T("Generate ID"),
-                                _href = r.url(component = "identity",
-                                              method = "generate",
-                                              ),
-                                _class = "action-btn",
-                                )
-            else:
-                card_button = ""
+            # Organizer-button for appointments
+            if r.component_name == "case_appointment":
+                oa_btn = A(T("Calendar"),
+                           _href = r.url(component = "case_appointment",
+                                         method = "organize",
+                                         ),
+                           _class = "action-btn activity button",
+                           )
+                showadd_btn = output.get("showadd_btn")
+                if showadd_btn:
+                    output["showadd_btn"] = TAG[""](oa_btn, showadd_btn)
+                else:
+                    output["showadd_btn"] = oa_btn
 
-            # Render in place of the delete-button
-            buttons["delete_btn"] = TAG[""](card_button,
-                                            )
         return output
     s3.postp = postp
 
@@ -1272,13 +1271,28 @@ def pr_group_membership_controller(**attr):
         resource = r.resource
         if r.controller == "dvr":
 
-            # Set default shelter
-            from ..helpers import get_default_shelter
-            shelter_id = get_default_shelter()
-            if shelter_id:
-                rtable = s3db.cr_shelter_registration
-                field = rtable.shelter_id
-                field.default = shelter_id
+            viewing = r.viewing
+            if viewing and viewing[0] == "pr_person":
+                person_id = viewing[1]
+            else:
+                person_id = None
+
+            from ..helpers import get_default_case_organisation, get_default_case_shelter
+            if person_id:
+                organisation_id = get_case_organisation(person_id)
+                shelter_id, unit_id = get_default_case_shelter(person_id)
+            else:
+                organisation_id = get_default_case_organisation()
+                shelter_id, unit_id = get_default_case_shelter(person_id)
+
+            # Set default case organisation
+            ctable = s3db.dvr_case
+            ctable.organisation_id.default = organisation_id
+
+            # Set default shelter and housing unit
+            rtable = s3db.cr_shelter_registration
+            rtable.shelter_id.default = shelter_id
+            rtable.shelter_unit_id.default = unit_id
 
             if r.interactive:
                 table = resource.table
