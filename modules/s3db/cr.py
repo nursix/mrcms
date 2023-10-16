@@ -845,10 +845,9 @@ class CRShelterUnitModel(DataModel):
                        ]
 
         self.configure(tablename,
-                       # @ToDo: Allow multiple shelters to have the same
-                       # name of unit (Requires that Shelter is in dvr/person.xsl/csv)
-                       #deduplicate = S3Duplicate(primary=("shelter_id", "name")),
-                       deduplicate = S3Duplicate(),
+                       deduplicate = S3Duplicate(primary = ("name",),
+                                                 secondary = ("shelter_id",),
+                                                 ),
                        list_fields = list_fields,
                        # Extra fields for shelter_unit_status:
                        extra_fields = ["status",
@@ -1788,11 +1787,7 @@ class CRShelterRegistrationModel(DataModel):
                      )
 
         configure(tablename,
-                  deduplicate = S3Duplicate(primary = ("person_id",
-                                                       "shelter_id",
-                                                       "shelter_unit_id",
-                                                       ),
-                                            ),
+                  deduplicate = S3Duplicate(primary = ("person_id",)),
                   onaccept = self.shelter_registration_onaccept,
                   ondelete = self.shelter_registration_ondelete,
                   )
@@ -2039,13 +2034,8 @@ class CRShelterRegistrationModel(DataModel):
                           )
 
             if current_status == 3: # checked-out
-
-                # Look up site_id of shelter
-                stable = s3db.cr_shelter
-                shelter = db(stable.id==shelter_id).select(stable.site_id,
-                                                           limitby = (0, 1),
-                                                           ).first()
-                # Register a CHECKOUT-event
+                # Register a CHECKOUT-event at the current shelter
+                shelter = Shelter(shelter_id)
                 if shelter and shelter.site_id:
                     SitePresence.register(person_id, shelter.site_id, "CHECKOUT")
 
@@ -2065,7 +2055,10 @@ class CRShelterRegistrationModel(DataModel):
 
         # Update shelter census
         if last_shelter_id and last_shelter_id != shelter_id:
-            Shelter(last_shelter_id).update_population()
+            last_shelter = Shelter(last_shelter_id)
+            last_shelter.update_population()
+            # ...also register a check-out event at the last shelter
+            SitePresence.register(person_id, last_shelter.site_id, "CHECKOUT")
         if shelter_id:
             Shelter(shelter_id).update_population()
 
@@ -2199,6 +2192,28 @@ class Shelter:
         self.population_by_type = settings.get_cr_shelter_population_by_type()
         self.population_by_age_group = settings.get_cr_shelter_population_by_age_group()
 
+        self._site_id = None
+
+    # -----------------------------------------------------------------------------
+    @property
+    def site_id(self):
+        """
+            The site ID of the shelter (lazy property)
+
+            Returns:
+                site ID
+        """
+
+        site_id = self._site_id
+        if not site_id:
+            table = current.s3db.cr_shelter
+            row = current.db(table.id == self.shelter_id).select(table.site_id,
+                                                                 limitby = (0, 1),
+                                                                 ).first()
+            site_id = self._site_id = row.site_id if row else None
+
+        return site_id
+
     # -----------------------------------------------------------------------------
     def update_status(self, date=None):
         """
@@ -2314,7 +2329,7 @@ class Shelter:
             query = (rtable.shelter_id == shelter_id) & \
                     (rtable.registration_status != 3) & \
                     (rtable.deleted == False)
-            cnt = rtable.id.count()
+            cnt = rtable.person_id.count(distinct=True)
             row = db(query).select(cnt).first()
             update["population"] = row[cnt] if row else 0
 
@@ -2496,7 +2511,7 @@ class HousingUnit:
             query = (rtable.shelter_unit_id == unit_id) & \
                     (rtable.registration_status != 3) & \
                     (rtable.deleted == False)
-            cnt = rtable.id.count()
+            cnt = rtable.person_id.count(distinct=True)
             row = db(query).select(cnt).first()
             population = row[cnt] if row else 0
         else:
