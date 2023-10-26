@@ -4,7 +4,7 @@
     License: MIT
 """
 
-from gluon import current, A, URL, SPAN
+from gluon import current, A, I, URL, SPAN
 
 from core import S3ResourceHeader, s3_fullname, s3_rheader_resource
 
@@ -13,6 +13,10 @@ from .helpers import hr_details
 # =============================================================================
 def dvr_rheader(r, tabs=None):
     """ Custom resource headers for DVR module """
+
+    auth = current.auth
+    has_permission = auth.s3_has_permission
+    accessible_url = auth.permission.accessible_url
 
     if r.representation != "html":
         # Resource headers only used in interactive views
@@ -34,11 +38,11 @@ def dvr_rheader(r, tabs=None):
             # Case file
 
             # "Case Archived" hint
-            hint = lambda record: SPAN(T("Invalid Case"),
-                                       _class="invalid-case",
-                                       )
+            hint = lambda record: SPAN(T("Invalid Case"), _class="invalid-case")
 
-            if current.request.controller == "security":
+            c = r.controller
+
+            if c == "security":
 
                 # No rheader except archived-hint
                 case = resource.select(["dvr_case.archived"], as_rows=True)
@@ -49,26 +53,47 @@ def dvr_rheader(r, tabs=None):
                     return None
 
             else:
-
                 if not tabs:
-                    tabs = [(T("Basic Details"), None),
+                    tabs = [# Common
+                            (T("Basic Details"), None),
                             (T("Family Members"), "group_membership/"),
-                            (T("ID"), "identity"),
-                            (T("Needs"), "case_activity"),
+                            # identity
                             (T("Appointments"), "case_appointment"),
-                            # case events
-                            # site presence
-                            (T("Photos"), "image"),
-                            (T("Notes"), "case_note"),
-                            #(T("Confiscation"), "seized_item"),
+
+                            # Counsel only:
+                            # vulnerability
+                            # case_activity
+                            # response_action
+
+                            # Case Administration only:
+                            # case_event
+                            # site_presence
+                            # image
+                            # seized_item
+
+                            # Both
+                            # "case_note"
                             ]
-                    if current.auth.s3_has_roles(("ORG_ADMIN",
-                                                  "CASE_ADMIN",
-                                                  #"CASE_MANAGER",
-                                                  )):
-                        tabs[5:5] = [(T("Presence"), "site_presence_event"),
-                                     #(T("Events"), "case_event"),
-                                     ]
+
+                    has_roles = current.auth.s3_has_roles
+                    if c == "counsel":
+                        if has_roles(("CASE_ADMIN", "CASE_MANAGER")):
+                            tabs.extend([(T("Vulnerabilities"), "vulnerability"),
+                                         (T("Needs"), "case_activity"),
+                                         (T("Measures"), "response_action"),
+                                         ])
+                    else:
+                        tabs.insert(2, (T("ID"), "identity"))
+                        # TODO activate when implemented
+                        #if has_roles(("CASE_ADMIN",)):
+                        #    tabs.append((T("Events"), "case_event"))
+                        if has_roles(("SHELTER_ADMIN", "SHELTER_MANAGER")):
+                            tabs.append((T("Presence"), "site_presence_event"))
+                        tabs.extend([(T("Photos"), "image"),
+                                     #(T("Confiscation"), "seized_item"),
+                                     ])
+
+                    tabs.append((T("Notes"), "case_note"))
 
                 case = resource.select(["dvr_case.status_id",
                                         "dvr_case.archived",
@@ -77,6 +102,8 @@ def dvr_rheader(r, tabs=None):
                                         "dvr_case.last_seen_on",
                                         "first_name",
                                         "last_name",
+                                        "person_details.nationality",
+                                        "shelter_registration.shelter_id",
                                         "shelter_registration.shelter_unit_id",
                                         #"absence",
                                         ],
@@ -87,13 +114,31 @@ def dvr_rheader(r, tabs=None):
                 if case:
                     # Extract case data
                     case = case[0]
-                    archived = case["_row"]["dvr_case.archived"]
+                    raw = case["_row"]
+
+                    nationality_label = case["pr_person_details.nationality"]
+                    nationality = lambda row: SPAN(raw["pr_person_details.nationality"],
+                                                   _title = nationality_label,
+                                                   _style = "cursor:pointer",
+                                                   )
+
                     case_status = lambda row: case["dvr_case.status_id"]
                     household_size = lambda row: case["dvr_case.household_size"]
+
+                    # Represent shelter as link to shelter overview, if permitted
+                    shelter_id = raw["cr_shelter_registration.shelter_id"]
+                    shelter_url = accessible_url(c="cr", f="shelter", args=[shelter_id, "overview"])
+                    shelter_name = case["cr_shelter_registration.shelter_id"]
+                    if shelter_url:
+                        shelter = lambda row: A(shelter_name, _href=shelter_url)
+                    else:
+                        shelter = lambda row: shelter_name
+
+                    unit = lambda row: case["cr_shelter_registration.shelter_unit_id"]
                     last_seen_on = lambda row: case["dvr_case.last_seen_on"]
-                    shelter = lambda row: case["cr_shelter_registration.shelter_unit_id"]
+
+                    # TODO reinstate when fixed
                     #absence = lambda row: case["pr_person.absence"]
-                    #transferable = lambda row: case["dvr_case.transferable"]
                 else:
                     # Target record exists, but doesn't match filters
                     return None
@@ -105,18 +150,36 @@ def dvr_rheader(r, tabs=None):
                                    (T("Case Status"), case_status),
                                    (T("Shelter"), shelter),
                                    ],
-                                  #[("", None),
-                                  # ("", None),
-                                  # (T("Absent##presence"), absence),
-                                  # ],
                                   ["date_of_birth",
                                    (T("Size of Family"), household_size),
+                                   (T("Housing Unit"), unit),
+                                   ],
+                                  [(T("Nationality"), nationality),
+                                   ("", None), #(T("Absent##presence"), absence),
                                    (T("Last seen on"), last_seen_on),
                                    ],
                                   ]
 
-                if archived:
+                if raw["dvr_case.archived"]:
                     rheader_fields.insert(0, [(None, hint)])
+
+                # Link to switch case file perspective
+                elif c == "dvr" and \
+                     has_permission("read", "pr_person", c="counsel", f="person", record_id=record.id):
+                    icon = "arrow-circle-right"
+                    link = A(T("Counseling"), _href=URL(c="counsel", f="person", args=[record.id]))
+                elif c == "counsel" and \
+                     has_permission("read", "pr_person", c="dvr", f="person", record_id=record.id):
+                    icon = "arrow-circle-left"
+                    link = A(T("Manage"), _href=URL(c="dvr", f="person", args=[record.id]))
+                else:
+                    icon = link = None
+                if link:
+                    # TODO move CSS into theme
+                    link.insert(0, I(_class = "fa fa-%s" % icon,
+                                     _style = "margin-right:0.3rem;vertical-align:middle;",
+                                     ))
+                    rheader_fields.append([(None, lambda item: link, 6)])
 
                 rheader_title = s3_fullname
 

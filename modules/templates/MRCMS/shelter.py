@@ -76,8 +76,8 @@ class ShelterOverview(CRUDMethod):
         allocable = total_capacity.get("allocable", 0)
 
         capacity = DIV(H5(T("Capacity")),
-                       TABLE(TR(TH(T("Housing Units")), TD(cap_regular)),
-                             TR(TH(T("Staging Area")), TD(cap_transitory)),
+                       TABLE(TR(TH(T("in Housing Units")), TD(cap_regular)),
+                             TR(TH(T("in Staging Area")), TD(cap_transitory)),
                              TR(TD(_class="spacer", _colspan=2)),
                              TR(TH(T("Free places")), TD(unallocated)),
                              TR(TH(T("Non-allocable##shelter")), TD(blocked)),
@@ -103,8 +103,8 @@ class ShelterOverview(CRUDMethod):
         total_css = "stats_excess" if total > cap_total else ""
 
         occupancy = DIV(H5(T("Current Population##shelter")),
-                        TABLE(TR(TH(T("Housing Units")), TD(regular), _class=regular_css),
-                              TR(TH(T("Staging Area")), TD(transitory), _class=transit_css),
+                        TABLE(TR(TH(T("in Housing Units")), TD(regular), _class=regular_css),
+                              TR(TH(T("in Staging Area")), TD(transitory), _class=transit_css),
                               TR(TH(T("Total##set")), TD(total), _class="stats-total %s" % total_css),
                               TR(TD(_class="spacer", _colspan=2)),
                               TR(TH(T("Families")), TD(families)),
@@ -253,20 +253,20 @@ class ResidentsList:
             sptable = s3db.org_site_presence
 
             left = [dtable.on((dtable.person_id == ptable.id) & \
-                            (dtable.deleted == False)),
+                              (dtable.deleted == False)),
                     mtable.on((mtable.person_id == ptable.id) & \
-                            (mtable.deleted == False)),
+                              (mtable.deleted == False)),
                     sptable.on((sptable.person_id == ptable.id) & \
-                            (sptable.site_id == self.site_id) & \
-                            (sptable.deleted == False)),
+                               (sptable.site_id == self.site_id) & \
+                               (sptable.deleted == False)),
                     ]
             join = [rtable.on((rtable.person_id == ptable.id) & \
-                            (rtable.shelter_id == self.shelter_id) & \
-                            (rtable.registration_status != 3) & \
-                            (rtable.deleted == False)),
+                              (rtable.shelter_id == self.shelter_id) & \
+                              (rtable.registration_status != 3) & \
+                              (rtable.deleted == False)),
                     ctable.on((ctable.person_id == ptable.id) & \
-                            (ctable.organisation_id == self.organisation_id) & \
-                            (ctable.deleted == False)),
+                              (ctable.organisation_id == self.organisation_id) & \
+                              (ctable.deleted == False)),
                     ]
             query = (ptable.deleted == False)
             rows = db(query).select(ptable.id,
@@ -276,7 +276,9 @@ class ResidentsList:
                                     ptable.gender,
                                     ptable.date_of_birth,
                                     dtable.nationality,
+                                    ctable.reference,
                                     ctable.household_size,
+                                    ctable.last_seen_on,
                                     sptable.status,
                                     mtable.id,
                                     mtable.group_id,
@@ -655,9 +657,8 @@ class ResidentsList:
         T = current.T
 
         return (("unit", T("Housing Unit"), "string"),
-                ("status", T("Status"), "string"),
-                ("check_in_date", T("Check-in date"), "date"),
                 ("pe_label", T("ID"), "string"),
+                ("refno", T("Principal Ref.No."), "string"),
                 ("last_name", T("Last Name"), "string"),
                 ("first_name", T("First Name"), "string"),
                 ("gender", T("Gender"), "string"),
@@ -665,6 +666,9 @@ class ResidentsList:
                 ("age", T("Age"), "string"),
                 ("nationality", T("Nationality"), "string"),
                 ("household_size", T("Size of Family"), "integer"),
+                ("status", T("Status"), "string"),
+                ("check_in_date", T("Check-in date"), "date"),
+                ("last_seen_on", T("Last seen on"), "date"),
                 )
 
     # -------------------------------------------------------------------------
@@ -685,6 +689,7 @@ class ResidentsList:
         s3db = current.s3db
         ptable = s3db.pr_person
         dtable = s3db.pr_person_details
+        ctable = s3db.dvr_case
         rtable = s3db.cr_shelter_registration
 
         residents = self.residents
@@ -737,8 +742,10 @@ class ResidentsList:
 
                 # Household size
                 case = row.dvr_case
+                data["refno"] = ctable.reference.represent(case.reference)
                 household_size = case.household_size
                 data["household_size"] = household_size if household_size else "-"
+                data["last_seen_on"] = ctable.last_seen_on.represent(case.last_seen_on)
 
             data_rows.extend(checked_in)
             data_rows.extend(planned)

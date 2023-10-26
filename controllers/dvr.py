@@ -188,11 +188,11 @@ def person():
                 #     case perspective (dvr/case) for multiple cases
                 #     per person!
                 crud_form = S3SQLCustomForm(
-                                #"dvr_case.reference",
                                 "dvr_case.organisation_id",
                                 "dvr_case.date",
                                 "dvr_case.status_id",
-                                #"pe_label",
+                                "pe_label",
+                                #"dvr_case.reference",
                                 "first_name",
                                 "middle_name",
                                 "last_name",
@@ -286,19 +286,56 @@ def person():
 
             elif component.tablename == "dvr_case_activity":
 
-                # Set default status
-                if settings.get_dvr_case_activity_use_status():
-                    s3db.dvr_case_activity_default_status()
+                person_id = r.record.id
+                organisation_id = s3db.dvr_case_organisation(person_id)
 
-                # Set defaults for inline responses
+                # Set default status
+                s3db.dvr_case_activity_default_status()
+
+                if settings.get_dvr_vulnerabilities():
+                    # Limit selectable vulnerabilities to case
+                    s3db.dvr_configure_case_vulnerabilities(person_id)
+
                 if settings.get_dvr_manage_response_actions():
+
+                    # Set defaults for inline responses
                     s3db.dvr_set_response_action_defaults()
+
+                    # Limit selectable response themes to case organisation
+                    if settings.get_dvr_response_themes():
+                        s3db.dvr_configure_case_responses(organisation_id)
+
+                # Configure CRUD form
+                component.configure(crud_form=s3db.dvr_case_activity_form(r))
+
 
             elif component.tablename == "dvr_response_action":
 
+                person_id = r.record.id
+                organisation_id = s3db.dvr_case_organisation(person_id)
+
                 # Set defaults
-                if settings.get_dvr_manage_response_actions():
-                    s3db.dvr_set_response_action_defaults()
+                s3db.dvr_set_response_action_defaults()
+
+                if settings.get_dvr_vulnerabilities():
+                    # Limit selectable vulnerabilities to case
+                    s3db.dvr_configure_case_vulnerabilities(person_id)
+
+                # Limit selectable response themes to case organisation
+                if settings.get_dvr_response_themes():
+                    s3db.dvr_configure_case_responses(organisation_id)
+
+            elif component.tablename == "dvr_vulnerability":
+
+                person_id = r.record.id
+                organisation_id = s3db.dvr_case_organisation(person_id)
+
+                # Limit vulnerabilities by case organisation sectors
+                s3db.dvr_configure_vulnerability_types(organisation_id)
+
+                # Set default human_resource_id
+                field = component.table.human_resource_id
+                field.default = current.auth.s3_logged_in_human_resource()
 
             elif r.component_name == "allowance" and \
                  r.method in (None, "update"):
@@ -623,12 +660,6 @@ def case_status():
 
     return crud_controller()
 
-# -----------------------------------------------------------------------------
-def case_type():
-    """ Case Types: RESTful CRUD Controller """
-
-    return crud_controller()
-
 # =============================================================================
 # Case Activities
 #
@@ -639,16 +670,15 @@ def case_activity():
 
         resource = r.resource
 
-        # Set default statuses, determine status-field
-        if settings.get_dvr_case_activity_use_status():
-            s3db.dvr_case_activity_default_status()
-            status_field = "status_id"
-        else:
-            status_field = "completed"
+        # Set default statuses
+        s3db.dvr_case_activity_default_status()
 
         # Set defaults for inline responses
         if settings.get_dvr_manage_response_actions():
             s3db.dvr_set_response_action_defaults()
+
+        # Configure form
+        resource.configure(crud_form=s3db.dvr_case_activity_form(r))
 
         # Set default person_id when creating from popup
         if r.method == "create" and \
@@ -669,6 +699,10 @@ def case_activity():
             query = (FS("person_id$dvr_case.archived") == False)
             resource.add_filter(query)
 
+            # Filter out case activities of closed cases
+            query = (FS("person_id$dvr_case.status_id$is_closed") == False)
+            resource.add_filter(query)
+
             # Mine-filter
             mine = r.get_vars.get("mine")
             if mine == "1":
@@ -684,17 +718,12 @@ def case_activity():
                     query = (FS("human_resource_id").belongs(set()))
                 resource.add_filter(query)
 
-        list_fields = ["case_id$reference",
+        # Prepend person data to default list fields
+        list_fields = ["person_id$pe_label",
                        "person_id$first_name",
                        "person_id$last_name",
-                       "need_id",
-                       "need_details",
-                       "emergency",
-                       "activity_details",
-                       "followup",
-                       "followup_date",
-                       status_field,
-                       ]
+                       ] + resource.get_config("list_fields", [])
+
         resource.configure(list_fields = list_fields,
                            insertable = False,
                            deletable = False,
@@ -712,34 +741,34 @@ def due_followups():
 
         resource = r.resource
 
-        # Set default statuses, determine status-field
-        if settings.get_dvr_case_activity_use_status():
-            s3db.dvr_case_activity_default_status()
-            status_field = "status_id"
-        else:
-            status_field = "completed"
+        # Set default statuses
+        s3db.dvr_case_activity_default_status()
 
         # Set defaults for inline responses
         if settings.get_dvr_manage_response_actions():
             s3db.dvr_set_response_action_defaults()
 
+        # Configure form
+        resource.configure(crud_form=s3db.dvr_case_activity_form(r))
+
         # Adapt CRUD strings to perspective
         s3.crud_strings["dvr_case_activity"]["title_list"] = T("Activities to follow up")
 
         if not r.record:
-
-            # Filter to exclude closed case activities
-            if current.deployment_settings.get_dvr_case_activity_use_status():
-                status_filter = (FS("status_id$is_closed") == False)
-            else:
-                status_filter = (FS("completed") == False)
-
             # Filters for due followups
             query = (FS("followup") == True) & \
                     (FS("followup_date") <= datetime.datetime.utcnow().date()) & \
-                    status_filter & \
+                    (FS("status_id$is_closed") == False) & \
                     ((FS("person_id$dvr_case.archived") == None) | \
                     (FS("person_id$dvr_case.archived") == False))
+            resource.add_filter(query)
+
+            # Filter out case activities of archived cases
+            query = (FS("person_id$dvr_case.archived") == False)
+            resource.add_filter(query)
+
+            # Filter out case activities of closed cases
+            query = (FS("person_id$dvr_case.status_id$is_closed") == False)
             resource.add_filter(query)
 
             # Mine-filter
@@ -760,13 +789,7 @@ def due_followups():
         list_fields = ["case_id$reference",
                        "person_id$first_name",
                        "person_id$last_name",
-                       "need_id",
-                       "need_details",
-                       "emergency",
-                       "activity_details",
-                       "followup_date",
-                       status_field,
-                       ]
+                       ] + resource.get_config("list_fields", [])
 
         resource.configure(list_fields = list_fields,
                            insertable = False,
@@ -1125,25 +1148,15 @@ def case_event_type():
 # Needs
 #
 def need():
-    """ Needs: RESTful CRUD Controller """
+    """ Needs: CRUD Controller """
 
-    if settings.get_dvr_needs_hierarchical():
+    return crud_controller()
 
-        tablename = "dvr_need"
-
-        from core import S3Represent
-        represent = S3Represent(lookup = tablename,
-                                hierarchy = True,
-                                translate = True,
-                                )
-
-        table = s3db[tablename]
-        field = table.parent
-        field.represent = represent
-        field.requires = IS_EMPTY_OR(IS_ONE_OF(db, "%s.id" % tablename,
-                                               represent,
-                                               orderby="%s.name" % tablename,
-                                               ))
+# =============================================================================
+# Vulnerability
+#
+def vulnerability_type():
+    """ Vulnerability Types: CRUD Controller """
 
     return crud_controller()
 

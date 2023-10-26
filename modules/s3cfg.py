@@ -2314,10 +2314,6 @@ class S3Config(Storage):
         """
         return current.T(self.ui.get("label_attachments", "Attachments"))
 
-    def get_ui_label_cluster(self):
-        """ UN-style deployment? """
-        return self.ui.get("cluster", False)
-
     def get_ui_label_locationselector_map_point_add(self):
         """
             Label for the Location Selector button to add a Point to the Map
@@ -3619,18 +3615,17 @@ class S3Config(Storage):
         """
         return self.dvr.get("label", None)
 
-    # Case Flags ------------------------------------------
-    def get_dvr_case_flags(self):
-        """
-            Enable features to manage case flags
-        """
-        return self.dvr.get("case_flags", False)
+    # Case Details ----------------------------------------
 
-    def get_dvr_case_flags_org_specific(self):
+    def get_dvr_household_size(self):
         """
-            Use organisation-specific case flags
+            Register number of persons per household (family)
+
+            False = off
+            True = manual
+            "auto" = count family members automatically
         """
-        return self.dvr.get("case_flags_org_specific", False)
+        return self.dvr.get("household_size", False)
 
     def get_dvr_track_transfer_sites(self):
         """
@@ -3654,17 +3649,43 @@ class S3Config(Storage):
         """
         return self.dvr.get("manage_transferability", False)
 
-    def get_dvr_household_size(self):
-        """
-            Register number of persons per household (family)
+    # Case Documents --------------------------------------
 
-            False = off
-            True = manual
-            "auto" = count family members automatically
+    def get_dvr_case_include_activity_docs(self):
         """
-        return self.dvr.get("household_size", False)
+            Documents-tab of beneficiaries includes case activity attachments
+        """
+        return self.dvr.get("case_include_activity_docs", False)
+
+    def get_dvr_case_include_group_docs(self):
+        """
+            Documents-tab of beneficiaries includes case group attachments
+        """
+        return self.dvr.get("case_include_group_docs", False)
+
+    # Case Flags ------------------------------------------
+
+    def get_dvr_case_flags(self):
+        """
+            Enable features to manage case flags
+        """
+        return self.dvr.get("case_flags", False)
+
+    def get_dvr_case_flags_org_specific(self):
+        """
+            Use organisation-specific case flags
+        """
+        return self.dvr.get("case_flags_org_specific", False)
+
+    # Needs -----------------------------------------------
+    def get_dvr_need_types_org_specific(self):
+        """
+            Use org-specific need types
+        """
+        return self.__lazy("dvr", "need_types_org_specific", False)
 
     # Appointments ----------------------------------------
+
     def get_dvr_appointment_types_org_specific(self):
         """
             Use organisation-specific appointment types
@@ -3693,6 +3714,7 @@ class S3Config(Storage):
         return self.dvr.get("appointments_update_case_status", False)
 
     # Case Events -----------------------------------------
+
     def get_dvr_case_event_types_org_specific(self):
         """
             Use organisation-specific case event types
@@ -3755,66 +3777,104 @@ class S3Config(Storage):
         """
         return self.dvr.get("id_code_pattern", None)
 
+    # Vulnerabilities -------------------------------------
+
+    def get_dvr_vulnerabilities(self):
+        """
+            Register vulnerabilities in case file
+        """
+        return self.__lazy("dvr", "vulnerabilities", False)
+
     # Case Activities -------------------------------------
-    def get_dvr_case_activity_use_status(self):
-        """
-            Use configurable statuses in case activities
-            instead of simple completed-flag
-        """
-        return self.dvr.get("case_activity_use_status", False)
 
-    def get_dvr_case_activity_sectors(self):
+    def get_dvr_case_activity_subject_type(self):
         """
-            Use sectors in group/case activities
+            Whether to use a free-text subject line or need category or both
+            - "subject": use subject line (default)
+            - "need": use need category
+            - "both": use both
         """
-        return self.dvr.get("case_activity_sectors", False)
+        return self.__lazy("dvr", "case_activity_subject_type", "subject")
 
-    def get_dvr_case_activity_use_service_type(self):
+    def get_dvr_case_activity_emergency(self):
         """
-            Use service type in case activities
+            Case activities can be marked as emergencies
         """
-        return self.dvr.get("case_activity_use_service_type", False)
+        return self.__lazy("dvr", "case_activity_emergency", False)
 
-    def get_dvr_case_activity_needs_multiple(self):
+    def get_dvr_case_activity_need_details(self):
         """
-            Whether Case Activities link to Multiple Needs
-            - e.g. DRK: False
-            - e.g. STL: True
+            Use free-text field for need details in case activities
         """
-        return self.dvr.get("case_activity_needs_multiple", False)
+        return self.__lazy("dvr", "case_activity_need_details", True)
+
+    def get_dvr_case_activity_vulnerabilities(self):
+        """
+            Link case activities to vulnerabilities triggering the need
+        """
+        default = self.get_dvr_vulnerabilities()
+        return self.__lazy("dvr", "case_activity_vulnerabilities", default)
+
+    def get_dvr_case_activity_response_details(self):
+        """
+            Use simple free-text field to describe measures taken
+            in a case activity
+        """
+        default = not self.get_dvr_manage_response_actions()
+        return self.__lazy("dvr", "case_activity_response_details", default)
+
+    def get_dvr_case_activity_updates(self):
+        """
+            Use inline-updates for case activities
+        """
+        return self.__lazy("dvr", "case_activity_updates", True)
+
+    def get_dvr_case_activity_status(self):
+        """
+            Use status in case activities (so they can be concluded)
+        """
+        return self.__lazy("dvr", "case_activity_status", True)
+
+    def get_dvr_case_activity_outcome(self):
+        """
+            Document outcome in case activities
+        """
+        default = self.get_dvr_case_activity_status()
+        return self.__lazy("dvr", "case_activity_outcome", default)
+
+    def get_dvr_case_activity_achievement(self):
+        """
+            Record achievement level in case activites
+        """
+        default = self.get_dvr_case_activity_need_details()
+        return self.__lazy("dvr", "case_activity_achievement", default)
 
     def get_dvr_case_activity_follow_up(self):
         """
             Enable/disable fields to schedule case activities for follow-up
         """
-        return self.__lazy("dvr", "case_activity_follow_up", default=True)
+        return self.__lazy("dvr", "case_activity_follow_up", True)
 
-    def get_dvr_case_include_activity_docs(self):
+    def get_dvr_case_activity_sectors(self):
         """
-            Documents-tab of beneficiaries includes case activity attachments
+            Link case activities to sectors
         """
-        return self.dvr.get("case_include_activity_docs", False)
+        return self.dvr.get("case_activity_sectors", False)
 
-    def get_dvr_case_include_group_docs(self):
+    def get_dvr_case_activity_use_service_type(self):
         """
-            Documents-tab of beneficiaries includes case group attachments
+            Link case activities to service types
         """
-        return self.dvr.get("case_include_group_docs", False)
+        return self.dvr.get("case_activity_use_service_type", False)
 
-    # Needs -----------------------------------------------
-    def get_dvr_needs_use_service_type(self):
+    def get_dvr_case_activity_documents(self):
         """
-            Use service type in needs
+            Documents can be uploaded for individual case activities
         """
-        return self.dvr.get("needs_use_service_type", False)
-
-    def get_dvr_needs_hierarchical(self):
-        """
-            Need types are hierarchical
-        """
-        return self.dvr.get("needs_hierarchical", False)
+        return self.dvr.get("case_activity_documents", False)
 
     # Response Actions ------------------------------------
+
     def get_dvr_manage_response_actions(self):
         """
             Manage individual response actions in case activities
@@ -3858,6 +3918,13 @@ class S3Config(Storage):
             Use themes for response actions
         """
         return self.__lazy("dvr", "response_themes", default=False)
+
+    def get_dvr_response_vulnerabilities(self):
+        """
+            Link response actions to vulnerabilities addressed
+        """
+        default = self.get_dvr_vulnerabilities()
+        return self.__lazy("dvr", "response_vulnerabilities", default)
 
     def get_dvr_response_themes_org_specific(self):
         """

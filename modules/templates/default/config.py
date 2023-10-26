@@ -646,7 +646,7 @@ def config(settings):
     # -------------------------------------------------------------------------
     # Disaster Victim Registry / Case Management
 
-    # Uncomment to use the term Beneficiary instead of Case
+    # Use the term Beneficiary instead of Case
     #settings.dvr.label = "Beneficiary"
 
     # Manage case flags
@@ -654,76 +654,97 @@ def config(settings):
     # Use org-specific case flags
     #settings.dvr.case_flags_org_specific = True
 
-    # Uncomment this to enable tracking of transfer origin/destination sites
+    # Enable tracking of transfer origin/destination sites
     #settings.dvr.track_transfer_sites = True
-    # Uncomment this to enable features to manage transferability of cases
+    # Enable features to manage transferability of cases
     #settings.dvr.manage_transferability = True
 
-    # Uncomment this to enable household size in cases, set to "auto" for automatic counting
+    # Include case activity docs on beneficiary documents-tab
+    #settings.dvr.case_include_activity_docs = True
+    # Include case group docs on beneficiary documents-tab
+    #settings.dvr.case_include_group_docs = True
+
+    # Enable household size in cases, set to "auto" for automatic counting
     #settings.dvr.household_size = True
+
+    # Use org-specific need types
+    #settings.dvr.need_types_org_specific = True
 
     # Use org-specific appointment types
     #settings.dvr.appointment_types_org_specific = True
-    # Uncomment this to expose flags to mark appointment types as mandatory
+    # Expose flags to mark appointment types as mandatory
     #settings.dvr.mandatory_appointments = True
-    # Uncomment this to have appointments with personal presence update last_seen_on
+    # Appointments with personal presence update last_seen_on
     #settings.dvr.appointments_update_last_seen_on = True
-    # Uncomment this to automatically update the case status when appointments are completed
+    # Automatically update the case status when appointments are completed
     #settings.dvr.appointments_update_case_status = True
 
     # Use org-specific case event types
     #settings.dvr.case_event_types_org_specific = True
-    # Uncomment this to automatically close appointments when registering certain case events
+    # Automatically close appointments when registering certain case events
     #settings.dvr.case_events_close_appointments = True
 
-    # Uncomment this to have allowance payments update last_seen_on
+    # Allowance payments update last_seen_on
     #settings.dvr.payments_update_last_seen_on = True
 
-    # Uncomment this to use service types for group/case activites
+    # Register vulnerabilities in case files
+    #settings.dvr.vulnerabilities = True
+
+    # Which subject type to use for case activities (subject|need|both)
+    #settings.dvr.case_activity_subject_type = "need"
+    # Allow marking case activities as emergencies
+    #settings.dvr.case_activity_emergency = True
+    # Disable recording of free-text need details
+    #settings.dvr.case_activity_need_details = False
+    # Enable/disable linking of case activities to relevant vulnerabilities
+    #settings.dvr.case_activity_vulnerabilities = True
+    # Enable/disable free-text response details
+    #settings.dvr.case_activity_response_details = True
+    # Disable case activity inline updates
+    #settings.dvr.case_activity_updates = False
+    # Disable case activity status
+    #settings.dvr.case_activity_status = False
+    # Enable/disable recording of free-text case activity outcome
+    #settings.dvr.case_activity_outcome = True
+    # Enable/disable recording of improvement level in case activities
+    #settings.dvr.case_activity_achievement = True
+    # Use service types for case activites
     #settings.dvr.case_activity_use_service_type = True
-    # Uncomment this to use sectors in group/case activities
+    # Use sectors in group/case activities
     #settings.dvr.case_activity_sectors = True
-    # Uncomment this to use case activity types
-    #settings.dvr.activity_types = True
-    # Uncomment this to use hierarchical case activity types
-    #settings.dvr.activity_types_hierarchical = True
-    # Uncomment this to use status field in case activities
-    #settings.dvr.case_activity_use_status = True
-    # Uncomment this to disable follow-up fields in case activities
+    # Disable follow-up fields in case activities
     #settings.dvr.case_activity_follow_up = False
+    # Allow uploading of documents in individual case activities
+    #settings.dvr.case_activity_documents = True
 
-    # Uncomment this to include case activity docs on beneficiary documents-tab
-    #settings.dvr.case_include_activity_docs = True
-    # Uncomment this to include case group docs on beneficiary documents-tab
-    #settings.dvr.case_include_group_docs = True
-
-    # Uncomment this if Case activities use multiple Needs
-    #settings.dvr.case_activity_needs_multiple = True
-    # Uncomment this to use service types for needs
-    #settings.dvr_needs_use_service_type = True
-    # Uncomment this to use hierarchical need types
-    #settings.dvr.needs_hierarchical = True
-
-    # Uncomment this to manage individual response actions in case activities
+    # Manage individual response actions in case activities
     #settings.dvr.manage_response_actions = True
-    # Uncomment this to not use response action types
+    # Disable response action types
     #settings.dvr.response_types = False
-    # Uncomment this to use response themes
+    # Use hierarchical response action types
+    #settings.dvr.response_types_hierarchical = True
+    # Response actions are usually planned in advance (e.g. default status = open)
+    #settings.dvr.response_planning = True
+    # Use a separate due-date for responses
+    #settings.dvr.response_due_date = True
+    # Use date+time for responses (instead of just date)
+    #settings.dvr.response_use_time = True
+    # Link response actions to vulnerabilities addressed
+    #settings.dvr.response_vulnerabilities = True
+    # Use response themes
     #settings.dvr.response_themes = True
-    # Uncomment this to not use org-specific response themes
+    # Disable org-specific response themes
     #settings.dvr.response_themes_org_specific = False
-    # Uncomment this to link response themes to org sectors
+    # Link response themes to org sectors
     #settings.dvr.response_themes_sectors = True
-    # Uncomment this to link response themes to needs
+    # Link response themes to needs
     #settings.dvr.response_themes_needs = True
+    # Document response action details per theme
+    #settings.dvr.response_themes_details = True
+    # Document response action efforts per theme
+    # settings.response_themes_efforts = True
     # Uncomment this to automatically link responses to case activities
     #settings.dvr.response_activity_autolink = True
-    # Uncomment this to activate features for response planning
-    #settings.dvr.response_planning = True
-    # Uncomment this to use a separate due-date for responses
-    #settings.dvr.response_due_date = True
-    # Uncomment this to use date+time for responses (instead of just date)
-    #settings.dvr.response_use_time = True
 
     # Configure a regular expression pattern for ID Codes (QR Codes)
     #settings.dvr.id_code_pattern = "(?P<label>[^,]*),(?P<first_name>[^,]*),(?P<last_name>[^,]*),(?P<date_of_birth>[^,]*)"
@@ -1347,6 +1368,11 @@ def config(settings):
         #    #description = "Tracks the location, capacity and breakdown of victims in Shelters",
         #    module_type = 10
         #)),
+        #("dvr", Storage(
+        #    name_nice = T("Beneficiary Registry"),
+        #    #description = "Disaster Victim Registry",
+        #    module_type = 10
+        #)),
         #("hms", Storage(
         #    name_nice = T("Hospitals"),
         #    #description = "Helps to monitor status of hospitals",
@@ -1395,12 +1421,6 @@ def config(settings):
         #   name_nice = T("Security"),
         #   #description = "Security Management System",
         #   module_type = 10,
-        #)),
-        # Deprecated: Replaced by BR
-        #("dvr", Storage(
-        #    name_nice = T("Beneficiary Registry"),
-        #    #description = "Disaster Victim Registry",
-        #    module_type = 10
         #)),
         # Deprecated: Replaced by event
         #("irs", Storage(

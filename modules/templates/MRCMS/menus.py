@@ -76,6 +76,7 @@ class S3MainMenu(default.S3MainMenu):
         return [
             MM("Clients", c=("dvr", "pr"), f=("person", "*")),
             shelter_menu,
+            MM("Counseling", c=("counsel", "pr"), f=("person", "*")),
             org_menu,
             MM("Security", c="security", f="seized_item"),
             ]
@@ -183,6 +184,25 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
     # -------------------------------------------------------------------------
     @classmethod
+    def counsel(cls):
+
+        sr = current.auth.get_system_roles()
+        ADMIN = sr.ADMIN
+        ORG_GROUP_ADMIN = sr.ORG_GROUP_ADMIN
+
+        return M(c="counsel")(
+                    M("Current Cases", c=("counsel", "pr"), f="person"),
+                    M("Administration", link=False, restrict=(ADMIN, ORG_GROUP_ADMIN))(
+                        # Global types
+                        M("Need Types", f="need"),
+                        M("Action Types", f="response_type"),
+                        M("Response Themes", f="response_theme"),
+                        M("Vulnerability Types", f="vulnerability_type"),
+                        ),
+                    )
+
+    # -------------------------------------------------------------------------
+    @classmethod
     def cms(cls):
 
         if not current.auth.s3_has_role("ADMIN"):
@@ -247,10 +267,10 @@ class S3OptionsMenu(default.S3OptionsMenu):
     def dvr():
         """ DVR / Disaster Victim Registry """
 
-        due_followups = current.s3db.dvr_due_followups() or "0"
-        follow_up_label = "%s (%s)" % (current.T("Due Follow-ups"),
-                                       due_followups,
-                                       )
+        #due_followups = current.s3db.dvr_due_followups() or "0"
+        #follow_up_label = "%s (%s)" % (current.T("Due Follow-ups"),
+        #                               due_followups,
+        #                               )
 
         sr = current.auth.get_system_roles()
         ADMIN = sr.ADMIN
@@ -261,11 +281,11 @@ class S3OptionsMenu(default.S3OptionsMenu):
                     M("Create", m="create", t="pr_person", p="create"),
                     M("All Cases", vars = {"closed": "include"}),
                     ),
-                M("Current Needs", f="case_activity")(
-                    M("Emergencies", vars={"~.emergency": "True"}),
-                    M(follow_up_label, f="due_followups"),
-                    M("Report", m="report"),
-                    ),
+                #M("Current Needs", f="case_activity")(
+                #    M("Emergencies", vars={"~.emergency": "True"}),
+                #    M(follow_up_label, f="due_followups"),
+                #    M("Report", m="report"),
+                #    ),
                 M("Appointments", f="case_appointment")(
                     M("Overview"),
                     #M("Import Updates", m="import", p="create",
@@ -315,7 +335,6 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
                     # Global types
                     M("Case Status", f="case_status", restrict=ADMIN),
-                    M("Need Types", f="need", restrict=ADMIN),
                     M("Residence Status Types", f="residence_status_type", restrict=ADMIN),
                     M("Residence Permit Types", f="residence_permit_type", restrict=ADMIN),
                     ),
