@@ -2158,6 +2158,7 @@ class S3Config(Storage):
     def get_ui_datatables_pagelength(self):
         """
             Default (minimum) pagelength for datatables
+            - set to -1 to show all records by default
         """
 
         return self.ui.get("datatables_pagelength", 25)
@@ -3872,6 +3873,12 @@ class S3Config(Storage):
             Documents can be uploaded for individual case activities
         """
         return self.dvr.get("case_activity_documents", False)
+
+    def get_dvr_case_activity_comments(self):
+        """
+            Case activities use a separate comments field
+        """
+        return self.dvr.get("case_activity_comments", False)
 
     # Response Actions ------------------------------------
 

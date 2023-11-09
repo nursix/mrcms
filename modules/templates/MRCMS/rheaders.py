@@ -72,6 +72,7 @@ def dvr_rheader(r, tabs=None):
                             # seized_item
 
                             # Both
+                            # "document"
                             # "case_note"
                             ]
 
@@ -83,17 +84,20 @@ def dvr_rheader(r, tabs=None):
                                          (T("Measures"), "response_action"),
                                          ])
                     else:
-                        tabs.insert(2, (T("ID"), "identity"))
-                        # TODO activate when implemented
-                        #if has_roles(("CASE_ADMIN",)):
-                        #    tabs.append((T("Events"), "case_event"))
+                        tabs[2:2] = [(T("ID"), "identity"),
+                                     (T("Service Contacts"), "service_contact"),
+                                     ]
+                        if has_roles(("CASE_ADMIN",)):
+                            tabs.append((T("Events"), "case_event"))
                         if has_roles(("SHELTER_ADMIN", "SHELTER_MANAGER")):
                             tabs.append((T("Presence"), "site_presence_event"))
                         tabs.extend([(T("Photos"), "image"),
                                      #(T("Confiscation"), "seized_item"),
                                      ])
 
-                    tabs.append((T("Notes"), "case_note"))
+                    tabs.extend([(T("Documents"), "document/"),
+                                 (T("Notes"), "case_note"),
+                                 ])
 
                 case = resource.select(["dvr_case.status_id",
                                         "dvr_case.archived",

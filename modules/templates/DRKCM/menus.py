@@ -65,7 +65,6 @@ class S3MainMenu(default.S3MainMenu):
                     MM("Organizations", c="org", f="organisation"),
                     MM("Facilities", c="org", f="facility"),
                     MM("Staff", c="hrm", f="staff"),
-                    MM("Volunteers", c="vol", f="volunteer"),
                     SEP(link=False),
                     MM("User Statistics", c="default", f="index",
                        args = ["userstats"],
@@ -280,7 +279,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
                         M("Current Cases", f="person", t="dvr_case",
                           check = not case_collaboration,
                           ),
-                        M("All Cases", f="person", t="dvr_case"),
+                        M("All Cases", f="person", t="dvr_case", vars={"closed": "1"}),
                         M("All Activities", f="case_activity", t="dvr_case_activity"),
                         M(all_due_followups_label, f="due_followups",
                           check = followups,
@@ -302,7 +301,7 @@ class S3OptionsMenu(default.S3OptionsMenu):
             menu = M(c="dvr")(
                     M("Current Cases", c=("dvr", "pr"), f="person", t="dvr_case")(
                         M("Create Case", m="create", t="pr_person", p="create"),
-                        M("All Cases", vars = {}),
+                        M("All Cases", vars = {"closed": "1"}),
                         M("Actions", f="response_action"),
                         ),
                     M("Activities", f="case_activity")(
@@ -397,28 +396,6 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
         return M(c="hrm")(
                     M(settings.get_hrm_staff_label(), f="staff")(
-                        M("Create", m="create"),
-                        ),
-                    M(teams, f="group", check=use_teams)(
-                        M("Create", m="create"),
-                        ),
-                    M("Job Titles", f="job_title")(
-                        M("Create", m="create"),
-                        ),
-                    )
-
-    # -------------------------------------------------------------------------
-    @staticmethod
-    def vol():
-        """ VOL / Volunteer Management """
-
-        settings = current.deployment_settings
-
-        teams = settings.get_hrm_teams()
-        use_teams = lambda i: teams
-
-        return M(c="vol")(
-                    M("Volunteers", f="volunteer")(
                         M("Create", m="create"),
                         ),
                     M(teams, f="group", check=use_teams)(

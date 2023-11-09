@@ -105,6 +105,7 @@ def realm_entity(table, row):
                        "dvr_note",
                        "dvr_residence_status",
                        "dvr_response_action",
+                       "dvr_service_contact",
                        "dvr_vulnerability",
                        "pr_group_membership",
                        "pr_identity",
@@ -164,6 +165,7 @@ def realm_entity(table, row):
                        "dvr_response_status",
                        "dvr_response_theme",
                        "dvr_response_type",
+                       "dvr_service_contact_type",
                        "dvr_vulnerability_type",
                        ):
         realm_entity = None
@@ -212,7 +214,7 @@ def doc_realm_entity(table, row):
     instance_type = row.doc_entity.instance_type
 
     # Inherit the realm entity from instance, if available
-    if document.doc_id and instance_type:
+    if document.doc_id and instance_type and instance_type != "pr_group":
         itable = s3db.table(instance_type)
         if itable and "realm_entity" in itable.fields:
             query = (itable.doc_id == document.doc_id)

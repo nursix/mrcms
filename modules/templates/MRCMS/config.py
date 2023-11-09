@@ -31,6 +31,7 @@ def config(settings):
     settings.base.rest_controllers = {("counsel", "index"): None,
                                       ("counsel", "person"): ("pr", "person"),
                                       ("counsel", "group_membership"): ("pr", "group_membership"),
+                                      ("counsel", "document"): ("doc", "document"),
                                       ("counsel", "need"): ("dvr", "need"),
                                       ("counsel", "response_type"): ("dvr", "response_type"),
                                       ("counsel", "response_theme"): ("dvr", "response_theme"),
@@ -213,9 +214,11 @@ def config(settings):
     # DOC Settings and Customizations
     #
     from .customise.doc import doc_document_resource, \
+                               doc_document_controller, \
                                doc_image_resource
 
     settings.customise_doc_document_resource = doc_document_resource
+    settings.customise_doc_document_controller = doc_document_controller
     settings.customise_doc_image_resource = doc_image_resource
 
     # -------------------------------------------------------------------------
@@ -225,6 +228,9 @@ def config(settings):
     settings.dvr.id_code_pattern = "(?P<label>[^,]*),(?P<family>[^,]*),(?P<last_name>[^,]*),(?P<first_name>[^,]*),(?P<date_of_birth>[^,]*),.*"
     # Uncomment this to enable household size in cases, set to "auto" for automatic counting
     settings.dvr.household_size = "auto"
+
+    settings.dvr.case_include_activity_docs = False
+    settings.dvr.case_include_group_docs = True
 
     # Manage case flags
     settings.dvr.case_flags = True
@@ -238,7 +244,7 @@ def config(settings):
     # Case events can close appointments
     settings.dvr.case_events_close_appointments = True
     # Exclude FOOD and SURPLUS-MEALS events from event registration
-    #settings.dvr.event_registration_exclude_codes = ("FOOD*", "SURPLUS-MEALS")
+    settings.dvr.event_registration_exclude_codes = ("FOOD*",)
 
     # Use org-specific appointment types
     settings.dvr.appointment_types_org_specific = True
@@ -317,8 +323,10 @@ def config(settings):
                                dvr_case_event_controller, \
                                dvr_case_appointment_type_controller, \
                                dvr_case_event_type_resource, \
+                               dvr_case_event_type_controller, \
                                dvr_case_flag_controller, \
                                dvr_note_resource, \
+                               dvr_service_contact_resource, \
                                dvr_site_activity_resource
 
     settings.customise_dvr_home = dvr_home
@@ -332,9 +340,11 @@ def config(settings):
 
     settings.customise_dvr_case_appointment_type_controller = dvr_case_appointment_type_controller
     settings.customise_dvr_case_event_type_resource = dvr_case_event_type_resource
+    settings.customise_dvr_case_event_type_controller = dvr_case_event_type_controller
     settings.customise_dvr_case_flag_controller = dvr_case_flag_controller
 
     settings.customise_dvr_note_resource = dvr_note_resource
+    settings.customise_dvr_service_contact_resource = dvr_service_contact_resource
     settings.customise_dvr_site_activity_resource = dvr_site_activity_resource
 
     # -------------------------------------------------------------------------
