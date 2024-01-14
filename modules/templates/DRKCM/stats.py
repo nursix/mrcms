@@ -15,13 +15,19 @@ from core import CRUDMethod, XLSWriter, s3_decode_iso_datetime, s3_str
 class PerformanceIndicators:
     """ Default Performance Indicators Set (Base Class) """
 
+    sectors = None
+    exclude_sectors = None
+
     def __init__(self):
 
         self.styles = None
 
+        self.title = current.T("Performance Indicators")
+
+        self._sector_ids = None
+
     # -------------------------------------------------------------------------
-    @staticmethod
-    def compute(resource):
+    def compute(self, resource):
         """
             Query/compute the performance indicators
 
@@ -32,35 +38,24 @@ class PerformanceIndicators:
                 dict with performance indicators (raw values)
         """
 
-        db = current.db
-        s3db = current.s3db
-
         table = resource.table
         rows = resource.select(["id"], as_rows=True)
 
         # Master query
         record_ids = set(row.id for row in rows)
-        master_query = table._id.belongs(record_ids)
+        dbset = self.dbset(record_ids,
+                           consultation = current.deployment_settings.get_dvr_response_types(),
+                           )
 
         # Total clients
         num_clients = table.person_id.count(distinct=True)
-        row = db(master_query).select(num_clients).first()
+        row = dbset.select(num_clients).first()
         total_clients = row[num_clients]
 
         # Total number of consultations, average effort per consultation
-        ttable = s3db.dvr_response_type
-        if current.deployment_settings.get_dvr_response_types():
-            join = ttable.on((ttable.id == table.response_type_id) & \
-                             (ttable.is_consultation == True))
-        else:
-            # Count all responses
-            join = None
-        num_responses = table._id.count()
+        num_responses = table._id.count(distinct=True)
         avg_hours = table.hours.avg()
-        row = db(master_query).select(num_responses,
-                                      avg_hours,
-                                      join = join,
-                                      ).first()
+        row = dbset.select(num_responses, avg_hours).first()
         total_responses = row[num_responses]
         avg_hours_per_response = row[avg_hours]
 
@@ -162,13 +157,179 @@ class PerformanceIndicators:
         row = sheet.row(rowindex)
         row.write(colindex, label, style)
 
-# =============================================================================
-class PerformanceIndicatorsLEA(PerformanceIndicators):
-    """ LEA-specific Performance Indicators Set """
+    # -------------------------------------------------------------------------
+    # Properties and helper functions
+    # -------------------------------------------------------------------------
+    @property
+    def sector_ids(self):
+        """
+            The record ID of the relevant sector (lazy property)
+
+            Returns:
+                org_sector record ID
+        """
+
+        sector_ids = self._sector_ids
+        if sector_ids is None:
+
+            table = current.s3db.org_sector
+
+            query = (table.deleted == False)
+            for exclude, sectors in enumerate((self.sectors, self.exclude_sectors)):
+                if sectors:
+                    if len(sectors) == 1:
+                        q = (table.abrv == sectors[0])
+                    else:
+                        q = (table.abrv.belongs(sectors))
+                    if exclude:
+                        q = ~q
+                    query = q & query
+
+            rows = current.db(query).select(table.id)
+            sector_ids = self._sector_ids = {row.id for row in rows}
+
+        return sector_ids
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def compute(resource):
+    def need_ids(code):
+        """
+            Returns a sub-select for dvr_need.id matching the given type code
+
+            Args:
+                code: the need type code
+
+            Returns:
+                sub-select
+        """
+
+        table = current.s3db.dvr_need
+        if isinstance(code, (tuple, set, list)):
+            query = (table.code.belongs(code))
+        else:
+            query = (table.code == code)
+        query &= (table.deleted == False)
+
+        return current.db(query)._select(table.id)
+
+    # -------------------------------------------------------------------------
+    def theme_ids(self, need=None, invert=False):
+        """
+            Returns a sub-select for the themes in the relevant sector
+
+            Args:
+                need: limit selection to themes linked to need types with
+                      this type code(s)
+                invert: invert the need filter
+
+            Returns:
+                sub-select
+        """
+
+        table = current.s3db.dvr_response_theme
+        query = (table.sector_id.belongs(self.sector_ids))
+        if need:
+            if invert:
+                query &= (~(table.need_id.belongs(self.need_ids(need))))
+            else:
+                query &= (table.need_id.belongs(self.need_ids(need)))
+        query &= (table.deleted == False)
+        return current.db(query)._select(table.id)
+
+    # -------------------------------------------------------------------------
+    def action_ids(self, subset, need=None, invert=False):
+        """
+            Returns a sub-select for actions in the subset linked to relevant
+            themes
+
+            Args:
+                subset: a pre-filtered set of dvr_response_action.id
+                need: limit selection to actions with themes linked to need
+                      types with this type code(s)
+                invert: invert the need filter
+
+            Returns:
+                sub-select
+        """
+
+        table = current.s3db.dvr_response_action_theme
+        query = (table.theme_id.belongs(self.theme_ids(need=need, invert=invert))) & \
+                (table.action_id.belongs(subset)) & \
+                (table.deleted == False)
+        return current.db(query)._select(table.action_id, distinct=True)
+
+    # -------------------------------------------------------------------------
+    def dbset(self,
+              subset,
+              consultation = True,
+              code = None,
+              indirect_closure = False,
+              need = None,
+              invert = False,
+              ):
+        """
+            Returns a Set (dbset) of relevant dvr_response_action
+
+            Args:
+                subset: a pre-filtered set of dvr_response_action.id
+                consultation: only consultation-type actions
+                code: limit selection to actions of types with this type code
+                indirect_closure: whether to include actions that have been
+                                  accomplished by participation of the client
+                                  in another action
+                need: limit selection to actions with themes linked to needs
+                      with this type code(s) (mutually exclusive with code)
+                invert: invert the need filter
+
+            Returns:
+                a Set (dbset)
+        """
+
+        db = current.db
+        s3db = current.s3db
+
+        # Status filter
+        stable = s3db.dvr_response_status
+        query = (stable.is_closed == True)
+        if not indirect_closure:
+            query &= (stable.is_indirect_closure == False)
+        query &= (stable.is_canceled == False) & \
+                 (stable.deleted == False)
+        status_ids = db(query)._select(stable.id)
+
+        # Type filter
+        ttable = s3db.dvr_response_type
+        query = (ttable.deleted == False)
+        if consultation:
+            query = (ttable.is_consultation == True) & query
+        if code:
+            if isinstance(code, (tuple, list, set)):
+                query = (ttable.code.belongs(code)) & query
+            else:
+                query = (ttable.code == code) & query
+        type_ids = db(query)._select(ttable.id)
+
+        # Themes filter
+        if consultation:
+            subset = self.action_ids(subset, need=need, invert=invert)
+
+        atable = s3db.dvr_response_action
+        master_query = (atable.status_id.belongs(status_ids)) & \
+                       (atable.response_type_id.belongs(type_ids)) & \
+                       (atable.id.belongs(subset)) & \
+                       (atable.deleted == False)
+
+        return db(master_query)
+
+# =============================================================================
+class PerformanceIndicatorsRP(PerformanceIndicators):
+    """ Performance Indicators Set RP (LEA) """
+
+    sectors = None
+    exclude_sectors = ("AVB",)
+
+    # -------------------------------------------------------------------------
+    def compute(self, resource):
         """
             Query/compute the performance indicators
 
@@ -178,7 +339,6 @@ class PerformanceIndicatorsLEA(PerformanceIndicators):
             Returns:
                 dict with performance indicators (raw values)
         """
-        # TODO adjust to only include efforts of SB/VB (exclude AVB-efforts)
 
         db = current.db
         s3db = current.s3db
@@ -188,20 +348,20 @@ class PerformanceIndicatorsLEA(PerformanceIndicators):
 
         # Master query
         record_ids = set(row.id for row in rows)
-        master_query = table._id.belongs(record_ids)
 
-        # Total responses
-        total_responses = len(record_ids)
-
-        # Total clients, average effort per response
-        num_clients = table.person_id.count(distinct=True)
+        # Total number of consultations, average effort per consultation
+        dbset = self.dbset(record_ids)
+        num_responses = table._id.count(distinct=True)
         avg_hours = table.hours.avg()
-
-        row = db(master_query).select(num_clients,
-                                      avg_hours,
-                                      ).first()
-        total_clients = row[num_clients]
+        row = dbset.select(num_responses, avg_hours).first()
+        total_responses = row[num_responses]
         avg_hours_per_response = row[avg_hours]
+
+        # Total clients
+        dbset = self.dbset(record_ids, indirect_closure=True)
+        num_clients = table.person_id.count(distinct=True)
+        row = dbset.select(num_clients).first()
+        total_clients = row[num_clients]
 
         # Average number of responses per client
         if total_clients:
@@ -215,26 +375,21 @@ class PerformanceIndicatorsLEA(PerformanceIndicators):
                          (ctable.household_size == 1))
 
         num_clients = table.person_id.count(distinct=True)
-
-        row = db(master_query).select(num_clients,
-                                      join = join,
-                                      ).first()
+        row = dbset.select(num_clients, join=join).first()
         singles = row[num_clients]
         families = total_clients - singles
 
         # Top 5 Nationalities
         dtable = s3db.pr_person_details
         left = dtable.on(dtable.person_id == table.person_id)
-
         nationality = dtable.nationality
         num_clients = table.person_id.count(distinct=True)
-
-        rows = db(master_query).select(nationality,
-                                       groupby = nationality,
-                                       orderby = ~num_clients,
-                                       left = left,
-                                       limitby = (0, 5),
-                                       )
+        rows = dbset.select(nationality,
+                            groupby = nationality,
+                            orderby = ~num_clients,
+                            left = left,
+                            limitby = (0, 5),
+                            )
         top_5_nationalities = [row[nationality] for row in rows]
 
         # Top 5 Needs (only possible if using themes+needs)
@@ -247,7 +402,7 @@ class PerformanceIndicatorsLEA(PerformanceIndicators):
             num_responses = ltable.action_id.count(distinct=True)
             need = ttable.need_id
 
-            query = ltable.action_id.belongs(record_ids)
+            query = ltable.action_id.belongs(dbset._select(table.id))
             rows = db(query).select(need,
                                     groupby = need,
                                     orderby = ~num_responses,
@@ -361,15 +516,17 @@ class PerformanceIndicatorsLEA(PerformanceIndicators):
 
 # =============================================================================
 class PerformanceIndicatorsBAMF(PerformanceIndicators):
+    """ Performance Indicator Set BAMF (LEA) """
 
-    sector = "AVB"
+    sectors = ("AVB",)
+    exclude_sectors = None
 
     # -------------------------------------------------------------------------
     def __init__(self):
 
         super().__init__()
 
-        self._sector_id = None
+        self.title = current.T("Indikatorenbericht")
 
     # -------------------------------------------------------------------------
     def compute(self, resource):
@@ -398,149 +555,105 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         return output
 
     # -------------------------------------------------------------------------
-    # Properties and helper functions
-    # -------------------------------------------------------------------------
-    @property
-    def sector_id(self):
+    def export(self, resource, sheet, title, subtitle=None):
         """
-            The record ID of the relevant sector (lazy property)
-
-            Returns:
-                org_sector record ID
-        """
-
-        sector_id = self._sector_id
-        if sector_id is None:
-
-            table = current.s3db.org_sector
-
-            query = (table.abrv == self.sector) & (table.deleted == False)
-            row = current.db(query).select(table.id, limitby=(0, 1)).first()
-
-            sector_id = self._sector_id = row.id if row else None
-
-        return sector_id
-
-    # -------------------------------------------------------------------------
-    @staticmethod
-    def need_ids(code):
-        """
-            Returns a sub-select for dvr_need.id matching the given type code
+            Export performance indicators
 
             Args:
-                code: the need type code
-
-            Returns:
-                sub-select
+                resource: the CRUDResource
+                sheet: the XLS worksheet to write to
+                title: the title for the export
+                subtitle: an optional subtitle (e.g. start+end dates)
         """
 
-        table = current.s3db.dvr_need
-        if isinstance(code, (tuple, set, list)):
-            query = (table.code.belongs(code))
+        write = self.write
+        rowindex = 0
+
+        # Title
+        write(sheet, rowindex, 0, title, style="header")
+        rowindex += 1
+
+        # Subtitle (optional)
+        if subtitle:
+            write(sheet, rowindex, 0, subtitle)
+            rowindex += 2
         else:
-            query = (table.code == code)
-        query &= (table.deleted == False)
+            rowindex += 1
 
-        return current.db(query)._select(table.id)
+        indicators = (
+            (1, "Anzahl der Beratungen", "consultations", "total"),
+            (2, "Anzahl der beratenen Personen", "clients", "total"),
+            (3, "Anzahl der Beratungen pro VZÄ (Durchschnitt)", "consultations", "per_fte"),
+            (4, "Anzahl aller Männer", "clients", "gender", "male"),
+            (5, "Anzahl aller Frauen", "clients", "gender", "female"),
+            (6, "Anzahl aller Divers", "clients", "gender", "diverse"),
+            (7, "Anzahl aller Personen bis zum vollendeten 18. Lebensjahr", "clients", "age_group", "u18"),
+            (8, "Anzahl aller Personen vom vollendeten 18. bis zum vollendeten 27. Lebensjahr", "clients", "age_group", "18-27"),
+            (9, "Anzahl aller Personen über dem vollendeten 65. Lebensjahr", "clients", "age_group", "65+"),
+            (10, "Anzahl aller beratenen Personen aus Syrien", "clients", "nationality", "SY"),
+            (11, "Anzahl aller beratenen Personen aus Afghanistan", "clients", "nationality", "AF"),
+            (12, "Anzahl aller beratenen Personen aus Türkei", "clients", "nationality", "TR"),
+            (13, "Anzahl aller beratenen Personen aus Georgien", "clients", "nationality", "GE"),
+            (14, "Anzahl aller beratenen Personen aus Iran", "clients", "nationality", "IR"),
+            (15, "Anzahl aller beratenen Personen aus Irak", "clients", "nationality", "IQ"),
+            (16, "Anzahl aller beratenen Personen aus Russische Föderation", "clients", "nationality", "RU"),
+            (17, "Anzahl aller beratenen Personen aus Nordmazedonien", "clients", "nationality", "MK"),
+            (18, "Anzahl aller beratenen Personen aus Venezuela", "clients", "nationality", "VE"),
+            (19, "Anzahl aller beratenen Personen aus Somalia", "clients", "nationality", "SO"),
+            (20, "Anzahl aller beratenen Personen aus Eritrea", "clients", "nationality", "ER"),
+            (21, "Anzahl aller beratenen Personen aus Algerien", "clients", "nationality", "DZ"),
+            (22, "Anzahl aller beratenen Personen aus Kolumbien", "clients", "nationality", "CO"),
+            (23, "Anzahl aller beratenen Personen aus Tunesien", "clients", "nationality", "TN"),
+            (24, "Anzahl aller beratenen Personen aus Nigeria", "clients", "nationality", "NG"),
+            (25, "Anzahl aller beratenen Personen aus Ungeklärt", "clients", "nationality", "??"),
+            (26, "Anzahl aller beratenen Personen aus Indien", "clients", "nationality", "IN"),
+            (27, "Anzahl aller beratenen Personen aus Pakistan", "clients", "nationality", "PK"),
+            (28, "Anzahl aller beratenen Personen aus Ägypten", "clients", "nationality", "EG"),
+            (29, "Anzahl aller beratenen Personen aus Serbien", "clients", "nationality", "RS"),
+            (30, "Anzahl aller beratenen Personen aus anderen Staaten", "clients", "nationality", "*"),
+            (31, "Anzahl der Fälle bei denen eine Weiterleitung zu Beratungsstelle stattgefunden hat", "referrals", "total"),
+            (32, "Anzahl der Weiterleitung von Meldebögen zu Vulnerabilitäten an BAMF", "vulnerabilities", "VRBAMF", "reports"),
+            (33, "Davon Anzahl der Fälle zu unbegleiteten minderjährigen Ausländern", "vulnerabilities", "VRBAMF", "cases", "UAM"),
+            (34, "Davon Anzahl der Fälle zu sexueller Orientierung oder geschlechtlicher Identität", "vulnerabilities", "VRBAMF", "cases", "LGBQTi"),
+            (35, "Davon Anzahl der Fälle zu Opfer von Menschenhandel", "vulnerabilities", "VRBAMF", "cases", "VHT"),
+            (36, "Davon Anzahl der Fälle zu Opfer von Folter, Vergewaltigung oder sonstigen schweren Formen psychischer, physischer oder sexueller Gewalt", "vulnerabilities", "VRBAMF", "cases", "VT"),
+            (37, "Davon Anzahl der Fälle zu Behinderung", "vulnerabilities", "VRBAMF", "cases", "DISAB"),
+            (38, "Davon Anzahl der Fälle die keiner der oben genannten Kategorien zugewiesen werden kann", "vulnerabilities", "VRBAMF", "cases", "*"),
+            (39, "Anzahl der Weiterleitung von Vulnerabilitäten an Aufnahmeeinrichtungen", "vulnerabilities", "VRRP", "reports"),
+            (40, "Davon Anzahl der Fälle zu unbegleiteten minderjährigen Ausländern", "vulnerabilities", "VRRP", "cases", "UAM"),
+            (41, "Davon Anzahl der Fälle zu sexueller Orientierung oder geschlechtlicher identität", "vulnerabilities", "VRRP", "cases", "LGBQTi"),
+            (42, "Davon Anzahl der Fälle zu Opfer von Menschenhandel", "vulnerabilities", "VRRP", "cases", "VHT"),
+            (43, "Davon Anzahl der Fälle zu Opfer von Folter, Vergewaltigung oder sonstigen schweren Formen psychischer, physischer oder sexueller Gewalt", "vulnerabilities", "VRRP", "cases", "VT"),
+            (44, "Davon Anzahl der Fälle zu Behinderung", "vulnerabilities", "VRRP", "cases", "DISAB"),
+            (45, "Davon Anzahl der Fälle die keiner der oben genannten Kategorien zugewiesen werden kann", "vulnerabilities", "VRRP", "cases", "*"),
+            (46, "Anzahl der Beratungen mit dem Themenschwerpunkt Anhörung", "themes", "HEARING"),
+            (47, "Anzahl der Beratungen mit dem Themenschwerpunkt Bescheid", "themes", "DECISION"),
+            (48, "Anzahl der Beratungen mit dem Themenschwerpunkt Klage", "themes", "COMPLAINT"),
+            (49, "Anzahl der Beratungen mit dem Themenschwerpunkt Dublin", "themes", "DUBLIN"),
+            (50, "Anzahl der Beratungen mit dem Themenschwerpunkt Sonstiges", "themes", "*"),
+            (51, "Anzahl der Erstgespräche (Erstes Beratungsgespräch eines Falles) gesamt", "followups", "initial"),
+            (52, "Anzahl der Folgegespräche (Beratungen nach Erstberatung eines Falles) gesamt", "followups", "followup"),
+            (53, "Anzahl der Beratungen mit einer Beratungszeit unter 15 Minuten", "efforts", "<15min"),
+            (54, "Anzahl der Beratungen mit einer Beratungszeit unter 30 Minuten", "efforts", "<30min"),
+            (55, "Anzahl der Beratungen mit einer Beratungszeit unter 60 Minuten", "efforts", "<60min"),
+            )
+        data = self.compute(resource)
 
-    # -------------------------------------------------------------------------
-    def theme_ids(self, need=None, invert=False):
-        """
-            Returns a sub-select for the themes in the relevant sector
+        for indicator in indicators:
+            index, title = indicator[:2]
 
-            Args:
-                need: limit selection to themes linked to need types with
-                      this type code(s)
-                invert: invert the need filter
+            items = data
+            for key in indicator[2:-1]:
+                items = items.get(key)
+                if items is None:
+                    break
+            value = items.get(indicator[-1], 0) if items else 0
 
-            Returns:
-                sub-select
-        """
-
-        table = current.s3db.dvr_response_theme
-        query = (table.sector_id == self.sector_id)
-        if need:
-            if invert:
-                query &= (~(table.need_id.belongs(self.need_ids(need))))
-            else:
-                query &= (table.need_id.belongs(self.need_ids(need)))
-        query &= (table.deleted == False)
-        return current.db(query)._select(table.id)
-
-    # -------------------------------------------------------------------------
-    def action_ids(self, subset, need=None, invert=False):
-        """
-            Returns a sub-select for actions in the subset linked to relevant
-            themes
-
-            Args:
-                subset: a pre-filtered set of dvr_response_action.id
-                need: limit selection to actions with themes linked to need
-                      types with this type code(s)
-                invert: invert the need filter
-
-            Returns:
-                sub-select
-        """
-
-        table = current.s3db.dvr_response_action_theme
-        query = (table.theme_id.belongs(self.theme_ids(need=need, invert=invert))) & \
-                (table.action_id.belongs(subset)) & \
-                (table.deleted == False)
-        return current.db(query)._select(table.action_id, distinct=True)
-
-    # -------------------------------------------------------------------------
-    def dbset(self, subset, code=None, indirect_closure=False, need=None, invert=False):
-        """
-            Returns a Set (dbset) of relevant dvr_response_action
-
-            Args:
-                subset: a pre-filtered set of dvr_response_action.id
-                code: limit selection to actions of types with this type code
-                      (without a code, selection is limited to consultation types)
-                indirect_closure: whether to include actions that have been
-                                  accomplished by participation of the client
-                                  in another action
-                need: limit selection to actions with themes linked to needs
-                      with this type code(s) (mutually exclusive with code)
-                invert: invert the need filter
-
-            Returns:
-                a Set (dbset)
-        """
-
-        db = current.db
-        s3db = current.s3db
-
-        # Status filter
-        stable = s3db.dvr_response_status
-        query = (stable.is_closed == True)
-        if not indirect_closure:
-            query &= (stable.is_indirect_closure == False)
-        query &= (stable.is_canceled == False) & \
-                 (stable.deleted == False)
-        status_ids = db(query)._select(stable.id)
-
-        # Type filter
-        ttable = s3db.dvr_response_type
-        if code:
-            query = (ttable.code == code)
-        else:
-            query = (ttable.is_consultation == True)
-        query &= (ttable.deleted == False)
-        type_ids = db(query)._select(ttable.id)
-
-        # Themes filter
-        if not code:
-            subset = self.action_ids(subset, need=need, invert=invert)
-
-        atable = s3db.dvr_response_action
-        master_query = (atable.status_id.belongs(status_ids)) & \
-                       (atable.response_type_id.belongs(type_ids)) & \
-                       (atable.id.belongs(subset)) & \
-                       (atable.deleted == False)
-
-        return db(master_query)
+            write(sheet, rowindex, 0, index)
+            if value is not None:
+                write(sheet, rowindex, 1, value)
+            write(sheet, rowindex, 2, title)
+            rowindex += 1
 
     # -------------------------------------------------------------------------
     # Client indicators
@@ -640,23 +753,27 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
 
         atable = s3db.dvr_response_action
         ptable = s3db.pr_person
-        join = ptable.on(ptable.id == atable.person_id)
+        join = ptable.on((ptable.id == atable.person_id) & \
+                         (ptable.date_of_birth != None))
 
-        rows = dbset.select(atable.id,
-                            atable.date,
-                            ptable.date_of_birth,
+        dob = ptable.date_of_birth.max()
+        doi = atable.date.min() # first consultation of the client
+
+        rows = dbset.select(ptable.id,
+                            dob,
+                            doi,
                             join = join,
+                            groupby = ptable.id,
                             )
         for row in rows:
-            action = row.dvr_response_action
-            client = row.pr_person
-            age = relativedelta(action.date, client.date_of_birth).years
+            age = relativedelta(row[doi], row[dob]).years
             for g in age_groups:
                 if age >= g[0] and (g[1] is None or age < g[1]):
                     age_groups[g] += 1
 
         return {"u18": age_groups[(0, 18)],
                 "18-27": age_groups[(18, 27)],
+                "27-65": age_groups[(27, 65)],
                 "65+": age_groups[(65, None)],
                 }
 
@@ -698,7 +815,7 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
 
         nationalities = ("SY", "AF", "TR", "GE", "IR", "IQ", "RU",
                          "MK", "VE", "SO", "ER", "DZ", "CO", "TN",
-                         "NG", None, "IN", "PK", "EG", "RS", "*"
+                         "NG", "??", "IN", "PK", "EG", "RS", "*"
                          )
 
         s3db = current.s3db
@@ -716,9 +833,11 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         clients = {n:0 for n in nationalities}
         for row in rows:
             nationality = row.pr_person_details.nationality
+            if nationality is None:
+                nationality = "??"
             if nationality not in nationalities:
                 nationality = "*"
-            clients[nationality] += 1
+            clients[nationality] += row[num_clients]
 
         return clients
 
@@ -770,7 +889,7 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         s3db = current.s3db
         atable = s3db.dvr_response_action
 
-        dbset = self.dbset(subset, code=response_type)
+        dbset = self.dbset(subset, code=response_type, consultation=False)
 
         num_actions = atable.id.count(distinct=True)
         row = dbset.select(num_actions).first()
@@ -794,19 +913,23 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
                 # 52 Anzahl der Folgegespräche (Beratungen nach Erstberatung eines Falles) gesamt
         """
 
-        response_types = {"INI": "initial", "FUP": "followup"}
+        response_types = {"initial": ("INI", "INI+I"),
+                          "followup": ("FUP", "FUP+I"),
+                          }
+
+        result = {k: 0 for k in response_types}
 
         s3db = current.s3db
         atable = s3db.dvr_response_action
 
-        result = {}
-        for code, indicator in response_types.items():
+        for indicator, code in response_types.items():
 
             dbset = self.dbset(subset, code=code)
             num_actions = atable.id.count(distinct=True)
 
             row = dbset.select(num_actions).first()
-            result[indicator] = row[num_actions] if row else 0
+            if row:
+                result[indicator] += row[num_actions]
 
         return result
 
@@ -829,20 +952,37 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
                 # 50 Anzahl der Beratungen mit dem Themenschwerpunkt Sonstiges
         """
 
-        needs = ("HEARING", "DECISION", "COMPLAINT", "DUBLIN")
+        needs = ("HEARING", "DECISION", "COMPLAINT", "DUBLIN", "*")
 
-        table = current.s3db.dvr_response_action
-        num_actions = table.id.count()
+        s3db = current.s3db
+        atable = s3db.dvr_response_action
+        ltable = s3db.dvr_response_action_theme
+        ttable = s3db.dvr_response_theme
+        ntable = s3db.dvr_need
 
-        result = {}
-        for need in needs:
-            dbset = self.dbset(subset, need=need)
-            row = dbset.select(num_actions).first()
-            result[need] = row[num_actions] if row else 0
+        join = [ttable.on(ttable.id == ltable.theme_id),
+                ntable.on(ntable.id == ttable.need_id),
+                ]
 
-        dbset = self.dbset(subset, need=needs, invert=True)
-        row = dbset.select(num_actions).first()
-        result["*"] = row[num_actions] if row else 0
+        action_ids = self.dbset(subset)._select(atable.id)
+        query = (ltable.action_id.belongs(action_ids)) & \
+                (ltable.theme_id.belongs(self.theme_ids())) & \
+                (ltable.deleted == False)
+
+        num_actions = ltable.action_id.count(distinct=True)
+        rows = current.db(query).select(ntable.code,
+                                        num_actions,
+                                        join = join,
+                                        groupby = ntable.code,
+                                        )
+
+        result = {c: 0 for c in needs}
+        for row in rows:
+            code = row[ntable.code]
+            if code in needs:
+                result[code] = row[num_actions]
+            else:
+                result["*"] += row[num_actions]
 
         return result
 
@@ -891,7 +1031,7 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         reports = {}
 
         # All vulnerability types linked to self.sector
-        query = (ltable.sector_id == self.sector_id) & \
+        query = (ltable.sector_id.belongs(self.sector_ids)) & \
                 (ltable.deleted == False)
         type_ids = db(query)._select(ltable.vulnerability_type_id)
 
@@ -900,7 +1040,7 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         types = {row.id: row.code for row in rows}
 
         for code in response_types:
-            dbset = self.dbset(subset, code=code)
+            dbset = self.dbset(subset, code=code, consultation=False)
 
             # Count all reports
             num_reports = atable.id.count(distinct=True)
@@ -988,7 +1128,7 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         efforts = {row[action_id]: row[total_hours] for row in rows}
 
         # For all other actions in the set...
-        query = ~atable.id.belongs(efforts.keys())
+        query = (~atable.id.belongs(efforts.keys())) & (atable.hours != None)
 
         # ...determine the total effort and the total number of theme links
         left = ltable.on((ltable.action_id == atable.id) & \
@@ -1034,51 +1174,18 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
         result = {k: 0 for k, _ in groups}
         for record_id, hours in efforts.items():
             for indicator, limit in groups:
-                if hours < limit:
+                if hours is None or hours < limit:
                     result[indicator] += 1
-                    # TODO assuming exclusive effort groups here
-                    #      - but is this correct? (indicator definitions are insufficient)
                     break
 
         return result
-
-    # -------------------------------------------------------------------------
-    def export(self, resource, sheet, title, subtitle=None):
-        """
-            Export performance indicators
-
-            Args:
-                resource: the CRUDResource
-                sheet: the XLS worksheet to write to
-                title: the title for the export
-                subtitle: an optional subtitle (e.g. start+end dates)
-        """
-
-        T = current.T
-        s3db = current.s3db
-
-        indicators = self.compute(resource)
-
-        write = self.write
-        rowindex = 0
-
-        # Title
-        write(sheet, rowindex, 0, title, style="header")
-        rowindex += 1
-
-        # Subtitle (optional)
-        if subtitle:
-            write(sheet, rowindex, 0, subtitle)
-            rowindex += 2
-        else:
-            rowindex += 1
 
 # =============================================================================
 class PerformanceIndicatorExport(CRUDMethod):
     """ REST Method to produce a response statistics data sheet """
 
     # Custom Performance Indicator Sets
-    PISETS = {"lea": PerformanceIndicatorsLEA,
+    PISETS = {"rp": PerformanceIndicatorsRP,
               "bamf": PerformanceIndicatorsBAMF,
               }
 
@@ -1089,6 +1196,8 @@ class PerformanceIndicatorExport(CRUDMethod):
         """
 
         super().__init__()
+
+        self.suffix = pitype
 
         indicators = self.PISETS.get(pitype) if pitype else None
 
@@ -1145,14 +1254,17 @@ class PerformanceIndicatorExport(CRUDMethod):
         # Create workbook and sheet
         book = xlwt.Workbook(encoding="utf-8")
 
-        title = s3_str(T("Performance Indicators"))
+        title = indicators.title
+        if not title:
+            title = T("Performance Indicators")
+        title = s3_str(title)
         sheet = book.add_sheet(title)
 
         # Title and Report Dates (from filter)
         dates = []
         get_vars = r.get_vars
         field = table.date
-        for fvar in ("~.start_date__ge", "~.end_date__le"):
+        for fvar in ("~.start_date__ge", "~.start_date__le"):
             dtstr = get_vars.get(fvar)
             if dtstr:
                 try:
@@ -1173,9 +1285,13 @@ class PerformanceIndicatorExport(CRUDMethod):
         book.save(output)
         output.seek(0)
 
+        # Filename
+        suffix = self.suffix
+        filename = ("indicators_%s.xls" % suffix) if suffix else "indicators.xls"
+
         # Response headers
         from gluon.contenttype import contenttype
-        disposition = "attachment; filename=\"%s\"" % "indicators.xls"
+        disposition = "attachment; filename=\"%s\"" % filename
         response = current.response
         response.headers["Content-Type"] = contenttype(".xls")
         response.headers["Content-disposition"] = disposition

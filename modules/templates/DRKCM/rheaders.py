@@ -6,6 +6,8 @@
 
 from gluon import current, A, DIV, SPAN, URL
 
+from .helpers import client_name_age, warn_if_missing
+
 # =============================================================================
 def drk_cr_rheader(r, tabs=None):
     """ CR custom resource headers """
@@ -56,9 +58,7 @@ def drk_dvr_rheader(r, tabs=None):
         # Resource headers only used in interactive views
         return None
 
-    from core import s3_rheader_resource, \
-                     S3ResourceHeader, \
-                     s3_fullname
+    from core import s3_rheader_resource, S3ResourceHeader
     from .uioptions import get_ui_options
 
     tablename, record = s3_rheader_resource(r)
@@ -147,6 +147,7 @@ def drk_dvr_rheader(r, tabs=None):
 
             case = resource.select(["first_name",
                                     "last_name",
+                                    "date_of_birth",
                                     "dvr_case.status_id",
                                     "dvr_case.archived",
                                     "dvr_case.household_size",
@@ -165,8 +166,6 @@ def drk_dvr_rheader(r, tabs=None):
             if case:
                 # Extract case data
                 case = case[0]
-
-                name = lambda person: s3_fullname(person, truncate=False)
                 raw = case["_row"]
 
                 case_status = lambda row: case["dvr_case.status_id"]
@@ -174,12 +173,12 @@ def drk_dvr_rheader(r, tabs=None):
                 organisation = lambda row: case["dvr_case.organisation_id"]
                 arrival_date = lambda row: case["dvr_case_details.arrival_date"]
                 household_size = lambda row: case["dvr_case.household_size"]
-                nationality = lambda row: case["pr_person_details.nationality"]
 
-                # Warn if nationality is lacking while mandatory
-                if ui_opts_get("case_nationality_mandatory") and \
-                   raw["pr_person_details.nationality"] is None:
-                    current.response.warning = T("Nationality lacking!")
+                dob = (T("Date of Birth"), warn_if_missing(case, "pr_person.date_of_birth"))
+                if ui_opts_get("case_nationality_mandatory"):
+                    nationality = (T("Nationality"), warn_if_missing(case, "pr_person_details.nationality"))
+                else:
+                    nationality = (T("Nationality"), lambda row: case["pr_person_details.nationality"])
 
                 bamf = lambda row: case["pr_bamf_person_tag.value"]
 
@@ -205,7 +204,7 @@ def drk_dvr_rheader(r, tabs=None):
 
             # Adaptive rheader-fields
             rheader_fields = [[None,
-                               (T("Nationality"), nationality),
+                               nationality,
                                (T("Case Status"), case_status)],
                               [None, None, None],
                               [None, None, None],
@@ -213,9 +212,9 @@ def drk_dvr_rheader(r, tabs=None):
 
             if ui_opts_get("case_use_pe_label"):
                 rheader_fields[0][0] = (T("ID"), "pe_label")
-                rheader_fields[1][0] = "date_of_birth"
+                rheader_fields[1][0] = dob
             else:
-                rheader_fields[0][0] = "date_of_birth"
+                rheader_fields[0][0] = dob
 
             if pob_sel:
                 pob_row = 1 if rheader_fields[1][0] is None else 2
@@ -256,7 +255,14 @@ def drk_dvr_rheader(r, tabs=None):
                 rheader_fields.insert(0, [(T("Organization"), organisation, colspan)])
             if flags_sel:
                 rheader_fields.append([(T("Flags"), flags, colspan)])
-            if ui_opts_get("case_header_protection_themes"):
+            if ui_opts_get("case_use_vulnerabilities"):
+                from .helpers import get_vulnerabilities
+                vulnerabilities = get_vulnerabilities(record)
+                rheader_fields.append([(T("Vulnerabilities"),
+                                       lambda i: vulnerabilities if vulnerabilities else "-",
+                                       colspan,
+                                       )])
+            elif ui_opts_get("case_header_protection_themes"):
                 from .helpers import get_protection_themes
                 rheader_fields.append([(T("Protection Need"),
                                         get_protection_themes,
@@ -267,12 +273,11 @@ def drk_dvr_rheader(r, tabs=None):
                 hint = lambda record: SPAN(T("Invalid Case"), _class="invalid-case")
                 rheader_fields.insert(0, [(None, hint)])
 
+            rheader_title = client_name_age
+
             # Generate rheader XML
-            rheader = S3ResourceHeader(rheader_fields, tabs, title=name)(
-                            r,
-                            table = resource.table,
-                            record = record,
-                            )
+            rheader = S3ResourceHeader(rheader_fields, tabs, title=rheader_title)
+            rheader = rheader(r, table=resource.table, record=record)
 
             # Add profile picture
             from core import s3_avatar_represent
