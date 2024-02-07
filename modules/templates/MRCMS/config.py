@@ -159,6 +159,16 @@ def config(settings):
     settings.customise_auth_user_resource = auth_user_resource
 
     # -------------------------------------------------------------------------
+    # ACT Settings and Customizations
+    from .customise.act import act_activity_resource, \
+                               act_activity_controller, \
+                               act_beneficiary_resource
+
+    settings.customise_act_activity_resource = act_activity_resource
+    settings.customise_act_activity_controller = act_activity_controller
+    settings.customise_act_beneficiary_resource = act_beneficiary_resource
+
+    # -------------------------------------------------------------------------
     # CMS Settings and Customizations
     #
     settings.cms.hide_index = True
@@ -243,6 +253,8 @@ def config(settings):
     settings.dvr.event_registration_checkin_warning = True
     # Case events can close appointments
     settings.dvr.case_events_close_appointments = True
+    # Case events can register activities
+    settings.dvr.case_events_register_activities = True
     # Exclude FOOD and SURPLUS-MEALS events from event registration
     settings.dvr.event_registration_exclude_codes = ("FOOD*",)
 
@@ -551,6 +563,12 @@ def config(settings):
         #   restricted = True,
         #   module_type = 10,
         #)),
+        ("act", Storage(
+            name_nice = T("Activities"),
+            #description = "Management of Organization Activities",
+            restricted = True,
+            module_type = 10,
+        )),
         #("project", Storage(
         #   name_nice = T("Projects"),
         #   #description = "Tracking of Projects, Activities and Tasks",
