@@ -199,6 +199,11 @@ def realm_entity(table, row):
     #    # Owned by the site, OU of managing organisation (default ok)
     #    pass
 
+    #elif tablename == "security_seized_item_depository":
+    #
+    #    # Owned by the managing organisation (default ok)
+    #    pass
+
     return realm_entity
 
 # -------------------------------------------------------------------------
