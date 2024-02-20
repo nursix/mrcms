@@ -126,6 +126,7 @@ def realm_entity(table, row):
                        "pr_person_tag",
                        "cr_shelter_registration",
                        "cr_shelter_registration_history",
+                       "security_seized_item",
                        ):
         # Inherit from person via person_id
         table = s3db.table(tablename)
