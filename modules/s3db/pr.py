@@ -101,10 +101,8 @@ __all__ = (# PR Base Entities
            "pr_image_modify",
 
            # Other functions
-           "pr_address_anonymise",
            "pr_availability_filter",
            "pr_import_prep",
-           "pr_person_obscure_dob",
 
            # Data List Default Layouts
            #"pr_address_list_layout",
@@ -298,7 +296,7 @@ class PRPersonEntityModel(DataModel):
                        gis_config = pe_id,
                        )
 
-        # Reusable fields
+        # Foreign Key Template
         pr_pe_label = FieldTemplate("pe_label", length=128,
                                     label = T("ID Tag Number"),
                                     requires = IS_EMPTY_OR(
@@ -394,7 +392,7 @@ class PRPersonEntityModel(DataModel):
                        pr_affiliation = "role_id",
                        )
 
-        # Reusable fields
+        # Foreign Key Template
         pr_role_represent = pr_RoleRepresent()
         role_id = FieldTemplate("role_id", "reference %s" % tablename,
                                 label = T("Role"),
@@ -2263,7 +2261,7 @@ class PRGroupModel(DataModel):
                                             ),
                   )
 
-        # Reusable Field
+        # Foreign Key Template
         represent = S3Represent(lookup=tablename, translate=True)
         status_id = FieldTemplate("status_id", "reference %s" % tablename,
                                   comment = S3PopupLink(c = "pr",
@@ -2376,7 +2374,7 @@ class PRGroupModel(DataModel):
                                   ),
                   )
 
-        # Reusable field
+        # Foreign Key Template
         if current.request.controller in ("hrm", "vol") and \
            current.deployment_settings.get_hrm_teams() == "Teams":
             label = T("Team")
@@ -2526,7 +2524,7 @@ class PRGroupModel(DataModel):
                                             ),
                   )
 
-        # Reusable Field
+        # Foreign Key Template
         represent = S3Represent(lookup=tablename, translate=True)
         role_id = FieldTemplate("role_id", "reference %s" % tablename,
                                 comment = S3PopupLink(c = "pr",
@@ -2959,7 +2957,7 @@ class PRForumModel(DataModel):
                   super_entity = ("pr_pentity"),
                   )
 
-        # Reusable field
+        # Foreign Key Template
         represent = S3Represent(lookup=tablename)
         forum_id = FieldTemplate("forum_id", "reference %s" % tablename,
                                  sortby = "name",
@@ -5425,7 +5423,7 @@ class PROccupationModel(DataModel):
             msg_list_empty = T("No Occupation Types currently defined"),
         )
 
-        # Reusable field
+        # Foreign Key Template
         represent = S3Represent(lookup = tablename,
                                 translate = True,
                                 )
@@ -9151,81 +9149,6 @@ def pr_image_modify(image_file,
         return True
     else:
         return False
-
-# =============================================================================
-def pr_address_anonymise(record_id, field, value):
-    """
-        Helper to anonymize a pr_address location; removes street and
-        postcode details, but retains Lx ancestry for statistics
-
-        Args:
-            record_id: the pr_address record ID
-            field: the location_id Field
-            value: the location_id
-
-        Returns:
-            the location_id
-
-        Example:
-            Use like this in anonymise rules:
-            ("pr_address", {"key": "pe_id",
-                            "match": "pe_id",
-                            "fields": {"location_id": s3db.pr_address_anonymise,
-                                       "comments": "remove",
-                                       },
-                            }),
-    """
-    # TODO move into Anonymize and deprecate here?
-
-    db = current.db
-    s3db = current.s3db
-
-    # Get the location
-    if value:
-        ltable = s3db.gis_location
-        row = db(ltable.id == value).select(ltable.id,
-                                            ltable.level,
-                                            limitby = (0, 1),
-                                            ).first()
-        if not row.level:
-            # Specific location => remove address details
-            data = {"addr_street": None,
-                    "addr_postcode": None,
-                    "gis_feature_type": 0,
-                    "lat": None,
-                    "lon": None,
-                    "wkt": None,
-                    }
-            # Doesn't work - PyDAL doesn't detect the None value:
-            #if "the_geom" in ltable.fields:
-            #    data["the_geom"] = None
-            row.update_record(**data)
-            if "the_geom" in ltable.fields:
-                db.executesql("UPDATE gis_location SET the_geom=NULL WHERE id=%s" % row.id)
-
-    return value
-
-# =============================================================================
-def pr_person_obscure_dob(record_id, field, value):
-    """
-        Helper to obscure a date of birth; maps to the first day of
-        the quarter, thus retaining the approximate age for statistics
-
-        Args:
-            record_id: the record ID
-            field: the Field
-            value: the field value
-
-        Returns:
-            the new field value
-    """
-    # TODO move into Anonymize and deprecate here?
-
-    if value:
-        month = int((value.month - 1) / 3) * 3 + 1
-        value = value.replace(month=month, day=1)
-
-    return value
 
 # =============================================================================
 def pr_availability_filter(r):
