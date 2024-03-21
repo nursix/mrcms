@@ -44,7 +44,9 @@ __all__ = ("BooleanRepresent",
            "s3_url_represent",
            "s3_yes_no_represent",
            "represent_file",
+           "represent_image",
            "represent_option",
+           "represent_hours",
            )
 
 import os
@@ -1017,7 +1019,11 @@ def represent_file(tablename="doc_document", fieldname="file"):
         icon = ICON(icon_type)
 
         output = A(icon,
-                   _href = URL(c="default", f="download", args=[value]),
+                   _href = URL(c = "default",
+                               f = "download",
+                               args = [value],
+                               vars = {"otn": tablename},
+                               ),
                    _title = name,
                    _class = "file-repr",
                    )
@@ -1037,6 +1043,40 @@ def represent_file(tablename="doc_document", fieldname="file"):
 
     return represent
 
+# -----------------------------------------------------------------------------
+def represent_image(tablename="doc_image", fieldname="file"):
+
+    def represent(value, row=None):
+        """
+            Represent an image as a clickable thumbnail
+
+            Args:
+                value: name of the image file
+                row: unused, for API compatibility
+
+            Returns:
+                representation (DIV-type)
+        """
+
+        if not value:
+            return current.messages["NONE"]
+
+        link = URL(c = "default",
+                   f = "download",
+                   args = value,
+                   vars = {"otn": tablename},
+                   )
+
+        return DIV(A(IMG(_src = link,
+                         _class = "img-preview",
+                         ),
+                     _class = "zoom",
+                     _href = link,
+                     ),
+                   )
+
+    return represent
+
 # =============================================================================
 def represent_option(options, default="-"):
     """
@@ -1052,6 +1092,45 @@ def represent_option(options, default="-"):
 
     def represent(value, row=None):
         return options.get(value, default)
+    return represent
+
+# =============================================================================
+def represent_hours(colon=False):
+    """
+        Representation function for hours (duration), adding an
+        onhover-hint with alternative formatting (0h 0min, or 0:00)
+
+        Args:
+            colon: use colon-notation 0:00 for hint
+
+        Returns:
+            function: the representation function
+    """
+
+    def represent(value, row=None):
+
+        if value is None:
+            return ""
+        try:
+            value = float(value)
+        except (ValueError, TypeError):
+            value = 0
+
+        hours = int(value)
+        minutes = round((value - hours) * 60)
+
+        if colon:
+            title = "%d:%02d" % (hours, minutes)
+        else:
+            formatted = []
+            if hours:
+                formatted.append("%dh" % hours)
+            if minutes:
+                formatted.append("%dmin" % minutes)
+            title = " ".join(formatted) if formatted else None
+
+        return SPAN("%s" % round(value, 2), _title=title, _class="hours-formatted")
+
     return represent
 
 # =============================================================================

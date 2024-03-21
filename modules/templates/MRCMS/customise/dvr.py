@@ -11,10 +11,10 @@ from gluon.storage import Storage
 
 from s3dal import Field
 from core import CRUDRequest, CustomController, FS, IS_ONE_OF, \
-                 S3SQLCustomForm, S3SQLInlineLink, \
-                 DateFilter, OptionsFilter, TextFilter, \
-                 get_form_record_id, s3_redirect_default, \
-                 set_default_filter, s3_fullname
+                 S3HoursWidget, S3SQLCustomForm, S3SQLInlineLink, \
+                 DateFilter, HierarchyFilter, OptionsFilter, TextFilter, \
+                 get_filter_options, get_form_record_id, s3_redirect_default, \
+                 represent_hours, set_default_filter, s3_fullname
 
 from .pr import configure_person_tags
 
@@ -296,47 +296,85 @@ def dvr_case_activity_controller(**attr):
     return attr
 
 # -------------------------------------------------------------------------
-def dvr_response_action_resource(r, tablename):
+def configure_response_action_reports(r,
+                                      multiple_orgs = False,
+                                      ):
+    """
+        Configures pivot report options for response actions
+
+        Args:
+            r: the CRUDRequest
+            multiple_orgs: user has permission to read response actions
+                           for multiple organisations (boolean)
+    """
+
+    T = current.T
+
+    # Custom Report Options
+    facts = ((T("Number of Actions"), "count(id)"),
+             (T("Number of Clients"), "count(person_id)"),
+             (T("Hours (Total)"), "sum(hours)"),
+             (T("Hours (Average)"), "avg(hours)"),
+             )
+    axes = ["person_id$gender",
+            "person_id$person_details.nationality",
+            #"person_id$person_details.marital_status",
+            #(T("Size of Family"), "person_id$dvr_case.household_size"),
+            "response_type_id",
+            (T("Theme"), "response_action_theme.theme_id"),
+            (T("Need Type"), "response_action_theme.theme_id$need_id"),
+            "response_action_theme.theme_id$sector_id",
+            "human_resource_id",
+            ]
+    if multiple_orgs:
+        # Add case organisation as report axis
+        axes.append("person_id$dvr_case.organisation_id")
+
+    report_options = {
+        "rows": axes,
+        "cols": axes,
+        "fact": facts,
+        "defaults": {"rows": "response_type_id",
+                     "cols": None,
+                     "fact": "count(id)",
+                     "totals": True,
+                     },
+        "precision": {"hours": 2, # higher precision is impractical
+                      },
+        }
+
+    current.s3db.configure("dvr_response_action",
+                           report_options = report_options,
+                           )
+
+# -------------------------------------------------------------------------
+def configure_response_action_filters(r,
+                                      on_tab = None,
+                                      multiple_orgs = False,
+                                      organisation_ids = None,
+                                      ):
+    """
+        Configures filter widgets for dvr_response_action
+
+        Args:
+            r: the CRUDRequest
+            on_tab: viewing response tab in case file (boolean)
+            multiple_orgs: user can see cases of multiple organisations,
+                           so include an organisation-filter
+            organisation_ids: the IDs of the organisations the user can access
+    """
 
     T = current.T
 
     s3db = current.s3db
+    table = s3db.dvr_response_action
 
-    on_tab = r.controller == "counsel" and r.resource.tablename == "pr_person"
+    if on_tab is None:
+        resource = r.resource
+        on_tab = resource.tablename != "dvr_response_action"
 
-    if on_tab and r.representation in ("html", "aadata", "pdf"):
-        # Show details per theme in interactive view and PDF exports
-        ltable = s3db.dvr_response_action_theme
-        ltable.id.represent = s3db.dvr_ResponseActionThemeRepresent(paragraph = True,
-                                                                    details = True,
-                                                                    )
-        themes = (T("Themes"), "response_action_theme.id")
-    else:
-        # Show just list of themes
-        themes = (T("Themes"), "response_action_theme.theme_id")
+    is_report = r.method == "report"
 
-    # List fields
-    list_fields = ["start_date",
-                   "response_type_id",
-                   themes,
-                   "human_resource_id",
-                   "hours",
-                   "status_id",
-                   ]
-    pdf_fields = ["start_date",
-                  "response_type_id",
-                  themes,
-                  "human_resource_id",
-                  ]
-
-    s3db.configure("dvr_response_action",
-                   list_fields = list_fields,
-                   pdf_format = "list",
-                   pdf_fields = pdf_fields,
-                   orderby = "dvr_response_action.start_date desc, dvr_response_action.created_on desc",
-                   )
-
-    # Filter widgets for tab
     if on_tab:
         filter_widgets = [TextFilter(["response_action_theme.comments",
                                       ],
@@ -346,9 +384,9 @@ def dvr_response_action_resource(r, tablename):
                                      hide_time = True,
                                      hidden = True,
                                      ),
-                          OptionsFilter("response_type_id",
-                                        hidden = True,
-                                        ),
+                          HierarchyFilter("response_type_id",
+                                          hidden = True,
+                                          ),
                           OptionsFilter("response_action_theme.theme_id$sector_id",
                                         hidden = True,
                                         ),
@@ -356,9 +394,255 @@ def dvr_response_action_resource(r, tablename):
                                         hidden = True,
                                         ),
                           ]
-        s3db.configure("dvr_response_action",
-                       filter_widgets = filter_widgets,
-                       )
+    else:
+        # TODO add case status filter
+        from ..helpers import get_response_theme_sectors
+        filter_widgets = [
+            TextFilter(["person_id$pe_label",
+                        "person_id$first_name",
+                        "person_id$middle_name",
+                        "person_id$last_name",
+                        "response_action_theme.comments"
+                        ],
+                       label = T("Search"),
+                       ),
+            DateFilter("start_date",
+                       hide_time = True,
+                       hidden = not is_report,
+                       ),
+            OptionsFilter("status_id",
+                          options = lambda: \
+                                    get_filter_options("dvr_response_status",
+                                                       orderby = "workflow_position",
+                                                       ),
+                          cols = 3,
+                          orientation = "rows",
+                          sort = False,
+                          size = None,
+                          translate = True,
+                          hidden = True,
+                          ),
+            HierarchyFilter("response_type_id",
+                            hidden = True,
+                            ),
+            OptionsFilter("response_action_theme.theme_id$sector_id",
+                          header = True,
+                          hidden = True,
+                          options = get_response_theme_sectors,
+                          ),
+            OptionsFilter("response_action_theme.theme_id",
+                          header = True,
+                          hidden = True,
+                          options = lambda: \
+                                    get_filter_options("dvr_response_theme",
+                                                       org_filter = True,
+                                                       ),
+                          ),
+            ]
+
+        if multiple_orgs:
+            # Add case organisation filter
+            if organisation_ids:
+                # Provide the permitted organisations as filter options
+                org_filter_opts = s3db.org_organisation_represent.bulk(organisation_ids,
+                                                                       show_link = False,
+                                                                       )
+                org_filter_opts.pop(None, None)
+            else:
+                # Look up from records
+                org_filter_opts = None
+            filter_widgets.insert(1, OptionsFilter("person_id$dvr_case.organisation_id",
+                                                   options = org_filter_opts,
+                                                   ))
+
+        # Filter by person responsible
+        field = table.human_resource_id
+        try:
+            hr_filter_opts = field.requires.options()
+        except AttributeError:
+            pass
+        else:
+            hr_filter_opts = dict(hr_filter_opts)
+            hr_filter_opts.pop('', None)
+        if hr_filter_opts:
+            filter_widgets.append(OptionsFilter("human_resource_id",
+                                                header = True,
+                                                hidden = True,
+                                                options = hr_filter_opts,
+                                                ))
+
+    s3db.configure("dvr_response_action",
+                   filter_widgets = filter_widgets,
+                   )
+
+# -------------------------------------------------------------------------
+def dvr_response_action_resource(r, tablename):
+
+    T = current.T
+
+    s3db = current.s3db
+
+    atable = s3db.dvr_response_action
+    ltable = s3db.dvr_response_action_theme
+
+    on_tab = r.controller == "counsel" and r.resource.tablename == "pr_person"
+
+    if on_tab and r.representation in ("html", "aadata", "pdf"):
+        # Show details per theme in interactive view and PDF exports
+        ltable.id.represent = s3db.dvr_ResponseActionThemeRepresent(paragraph = True,
+                                                                    details = True,
+                                                                    )
+        themes = (T("Themes"), "response_action_theme.id")
+    else:
+        # Show just list of themes
+        themes = (T("Themes"), "response_action_theme.theme_id")
+
+    # Configure hours-fields for both total and per-theme efforts
+    for field in (ltable.hours, atable.hours):
+        field.widget = S3HoursWidget(precision = 2,
+                                     placeholder = "HH:MM",
+                                     explicit_above = 3,
+                                     )
+        field.represent = represent_hours()
+
+    if on_tab:
+        person_id, pe_label = None, None
+        configure_response_action_filters(r, on_tab=True)
+    else:
+        person_id, pe_label = "person_id", (T("ID"), "person_id$pe_label")
+        field = atable.person_id
+        field.readable = True
+        field.writable = False
+        field.represent =  s3db.pr_PersonRepresent(show_link = True,
+                                                   linkto = URL(c = r.controller,
+                                                                f = "person",
+                                                                args = ["[id]"],
+                                                                extension = "",
+                                                                ),
+                                                   )
+        field.comment = None
+
+    field = atable.human_resource_id
+    field.represent = s3db.hrm_HumanResourceRepresent(show_link=False)
+
+    # List fields
+    list_fields = [pe_label,
+                   person_id,
+                   "start_date",
+                   "response_type_id",
+                   themes,
+                   "human_resource_id",
+                   "hours",
+                   "status_id",
+                   ]
+    pdf_fields = [pe_label,
+                  person_id,
+                  "start_date",
+                  "response_type_id",
+                  themes,
+                  "human_resource_id",
+                  ]
+
+    s3db.configure("dvr_response_action",
+                   list_fields = list_fields,
+                   pdf_format = "list" if on_tab else "table",
+                   pdf_fields = pdf_fields,
+                   orderby = "dvr_response_action.start_date desc, dvr_response_action.created_on desc",
+                   )
+
+# -------------------------------------------------------------------------
+def dvr_response_action_controller(**attr):
+
+    T = current.T
+    db = current.db
+    s3db = current.s3db
+
+    s3 = current.response.s3
+    settings = current.deployment_settings
+
+    settings.base.bigtable = True
+
+    #standard_prep = s3.prep
+    def prep(r):
+
+        # Call standard prep
+        #result = standard_prep(r) if callable(standard_prep) else True
+        result = True
+
+        resource = r.resource
+        table = resource.table
+
+        # Beneficiary is required and must have a case file
+        ptable = s3db.pr_person
+        ctable = s3db.dvr_case
+        dbset = db((ptable.id == ctable.person_id) & \
+                   (ctable.archived == False) & \
+                   (ctable.deleted == False))
+        field = table.person_id
+        field.requires = IS_ONE_OF(dbset, "pr_person.id", field.represent)
+
+        # Set defaults
+        s3db.dvr_set_response_action_defaults()
+
+        # Create/delete requires context perspective
+        resource.configure(insertable = False,
+                           deletable = False,
+                           )
+
+        record = r.record
+        if not record:
+            # Exclude archived (invalid) cases
+            query = (FS("person_id$dvr_case.archived") == False) | \
+                    (FS("person_id$dvr_case.archived") == None)
+            resource.add_filter(query)
+
+            from ..helpers import get_case_organisations
+            multiple_orgs, organisation_ids = get_case_organisations()
+
+            configure_response_action_filters(r,
+                                              on_tab = False,
+                                              multiple_orgs = multiple_orgs,
+                                              organisation_ids = organisation_ids,
+                                              )
+            configure_response_action_reports(r,
+                                              multiple_orgs = multiple_orgs,
+                                              )
+
+            # pisets = {pitype: (method, icon, title)}
+            pisets = {"default": ("indicators",
+                                  "line-chart",
+                                  T("Performance Indicators"),
+                                  ),
+                      "bamf": ("indicators_bamf",
+                               "tachometer",
+                               "%s %s" % (T("Performance Indicators"), "BAMF"),
+                               ),
+                      }
+
+            from ..stats import PerformanceIndicatorExport
+            for pitype in ("bamf", "default"):
+                piset = pisets.get(pitype)
+                if not piset:
+                    continue
+                method, icon, title = piset
+                s3db.set_method("dvr_response_action",
+                                method = method,
+                                action = PerformanceIndicatorExport(pitype),
+                                )
+                export_formats = list(settings.get_ui_export_formats())
+                fmt = "%s.xls" % method
+                export_formats.append((fmt, "fa fa-%s" % icon, title))
+                s3.formats[fmt] = r.url(method=method)
+                settings.ui.export_formats = export_formats
+
+        elif settings.get_dvr_vulnerabilities():
+            # Limit selectable vulnerabilities to case
+            s3db.dvr_configure_case_vulnerabilities(record.person_id)
+
+        return result
+    s3.prep = prep
+
+    return attr
 
 # -------------------------------------------------------------------------
 def dvr_case_appointment_resource(r, tablename):

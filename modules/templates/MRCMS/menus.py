@@ -172,7 +172,9 @@ class S3MainMenu(default.S3MainMenu):
 
         menu_about = MA(c="default")(
                 MA("Help", f="help"),
-                #MA("Contact", f="contact"),
+                MA("Contact", f="index", args=["contact"]),
+                MA("Privacy", f="index", args=["privacy"]),
+                MA("Legal Notice", f="index", args=["legal"]),
                 MA("Version", f="about", restrict = ADMIN),
                 )
 
@@ -198,6 +200,10 @@ class S3OptionsMenu(default.S3OptionsMenu):
 
         return M(c="counsel")(
                     M("Current Cases", c=("counsel", "pr"), f="person"),
+                    M("Actions", c="counsel", f="response_action")(
+                        M("Overview"),
+                        M("Statistic", m="report"),
+                        ),
                     M("Administration", link=False, restrict=(ADMIN, ORG_GROUP_ADMIN))(
                         # Global types
                         M("Need Types", f="need"),
