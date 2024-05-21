@@ -26,8 +26,8 @@
     OTHER DEALINGS IN THE SOFTWARE.
 """
 
-__all__ = ("S3MainMenu",
-           "S3OptionsMenu",
+__all__ = ("MainMenu",
+           "OptionsMenu",
            )
 
 import re
@@ -35,11 +35,11 @@ import re
 from gluon import current, URL
 from gluon.storage import Storage
 
-from core import IS_ISO639_2_LANGUAGE_CODE
-from s3layouts import M, MM, MP, ML, MA, OM, MOA, S3BreadcrumbsLayout
+from ..tools import IS_ISO639_2_LANGUAGE_CODE
+from .layouts import M, MM, MP, ML, MA, OM, MOA, BreadcrumbsLayout
 
 # =============================================================================
-class S3MainMenu:
+class MainMenu:
     """ The default configurations for the main application menu """
 
     # -------------------------------------------------------------------------
@@ -257,7 +257,7 @@ class S3MainMenu:
                 )
 
 # =============================================================================
-class S3OptionsMenu:
+class OptionsMenu:
     """
         The default configurations for options menus
 
@@ -296,7 +296,6 @@ class S3OptionsMenu:
         settings = current.deployment_settings
         consent_tracking = lambda i: settings.get_auth_consent_tracking()
         is_data_repository = lambda i: settings.get_sync_data_repository()
-        #translate = settings.has_module("translate")
 
         # NB: Do not specify a controller for the main menu to allow
         #     re-use of this menu by other controllers
@@ -330,17 +329,6 @@ class S3OptionsMenu:
                         M("Public Data Sets", f="dataset", check=is_data_repository),
                         M("Log", f="log"),
                     ),
-                    # TODO setting to enable:
-                    #M("Translation", c="admin", f="translate", check=translate)(
-                    #   M("Select Modules for translation", c="admin", f="translate",
-                    #     m="create", vars={"opt": "1"}),
-                    #   M("Upload translated files", c="admin", f="translate",
-                    #     m="create", vars={"opt": "2"}),
-                    #   M("View Translation Percentage", c="admin", f="translate",
-                    #     m="create", vars={"opt": "3"}),
-                    #   M("Add strings manually", c="admin", f="translate",
-                    #     m="create", vars={"opt": "4"})
-                    #),
                 )
 
     # -------------------------------------------------------------------------
@@ -1697,7 +1685,7 @@ class S3OptionsMenu:
         """ Breadcrumbs from the current options menu """
 
         # Configure the layout:
-        layout = S3BreadcrumbsLayout
+        layout = BreadcrumbsLayout
 
         request = current.request
         controller = request.controller
