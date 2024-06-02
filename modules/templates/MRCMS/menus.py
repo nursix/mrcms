@@ -75,6 +75,7 @@ class MainMenu(default.MainMenu):
 
         return [
             MM("Clients", c=("dvr", "pr"), f=("person", "*")),
+            MM("Food Distribution", c="dvr", f="case_event", m="register_food", p="create", restrict="CATERING"),
             shelter_menu,
             MM("Counseling", c=("counsel", "pr"), f=("person", "*")),
             org_menu,

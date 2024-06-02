@@ -33,7 +33,8 @@
             labelArrival: 'Arrival',
             labelDeparture: 'Departure',
             labelEmpty: 'No data available',
-            labelClose: 'Close'
+            labelClose: 'Close',
+            labelExport: 'Export Data'
         },
 
         /**
@@ -136,10 +137,12 @@
         _renderWidget: function(data) {
 
             let opts = this.options,
-                widget = $('<div class="rhist">');
+                widget = $('<div class="rhist">'),
+                exportLink;
 
             // Add the title
-            $('<h6>').text(opts.labelTitle).appendTo(widget);
+            let title = $('<h6>').text(opts.labelTitle).appendTo(widget);
+
 
             if (data.length) {
                 let history = $('<table>').appendTo(widget);
@@ -187,18 +190,29 @@
                         checkOut.attr('title', opts.labelMissing);
                     }
                 });
+
+                // Export Link
+                if (opts.xlsxURL) {
+                    exportLink = $('<a class="action-btn" href=' + opts.xlsxURL + '>' + opts.labelExport + '<i class="fa fa-file-excel-o"></i></a>');
+                }
+
             } else {
                 // Empty-message
                 $('<p class="empty">').text(opts.labelEmpty).appendTo(widget);
             }
 
             // Close-button
-            let closeButton = $('<button type="button" class="action-btn">').text(opts.labelClose).appendTo(widget),
-                ns = this.eventNamespace,
+            let actions = $('<div>').appendTo(widget),
+                closeButton = $('<button type="button" class="action-btn">').text(opts.labelClose).appendTo(actions);
+
+            let ns = this.eventNamespace,
                 self = this;
             closeButton.one('click' + ns, function() {
                 self._removeWidget();
             });
+            if (!!exportLink) {
+                exportLink.appendTo(actions);
+            }
 
             this.container.append(widget);
             this._hideTrigger();

@@ -194,12 +194,20 @@ def pr_person_resource(r, tablename):
 
             if controller == "dvr" and auth.s3_has_role("ADMIN"):
                 # Configure anonymize-method
-                from core import S3Anonymize
-                s3db.set_method("pr_person", method="anonymize", action=S3Anonymize)
+                from core import Anonymize
+                s3db.set_method("pr_person", method="anonymize", action=Anonymize)
 
                 # Configure anonymize-rules
                 from ..anonymize import anonymize_rules
                 resource.configure(anonymize=anonymize_rules())
+
+                # Configure anonymize bulk-action
+                resource.configure(bulk_actions = ({"label": current.T("Anonymize"),
+                                                    "mode": "ajax",
+                                                    "url": r.url(method="anonymize", representation="json", vars={}),
+                                                    },
+                                                   ),
+                                   )
 
             # Disabled due to requirement for skills to create templates:
             ## Configure case document template methods
@@ -866,8 +874,6 @@ def configure_dvr_person_controller(r, privileged=False, administration=False):
 
     if not r.component:
 
-        configure_person_tags()
-
         # Attach registration history method
         from ..presence import RegistrationHistory
         s3db.set_method("pr_person",
@@ -1322,8 +1328,8 @@ def configure_custom_actions(r, output, is_case_admin=False, is_org_admin=False)
 
             if controller == "dvr" and current.auth.s3_has_role("ADMIN"):
                 # Anonymize-button
-                from core import S3AnonymizeWidget
-                anonymize = S3AnonymizeWidget.widget(r, _class="button action-btn anonymize-btn")
+                from core import AnonymizeWidget
+                anonymize = AnonymizeWidget.widget(r, _class="button action-btn anonymize-btn")
                 inject_button(output, anonymize, before="delete_btn", alt=None)
 
             # Disabled due to requirement for skills to create templates
@@ -1365,9 +1371,13 @@ def configure_custom_actions(r, output, is_case_admin=False, is_org_admin=False)
                 s3.scripts.append(script)
 
             # Instantiate widget
-            opts = {"ajaxURL": r.url(component="",
-                                     method="registration_history",
-                                     representation="json",
+            opts = {"ajaxURL": r.url(component = "",
+                                     method = "registration_history",
+                                     representation = "json",
+                                     ),
+                    "xlsxURL": r.url(component = "shelter_registration_history",
+                                     method = "",
+                                     representation = "xlsx",
                                      ),
                     "container": "map",
                     "labelTitle": s3_str(label),
@@ -1378,6 +1388,7 @@ def configure_custom_actions(r, output, is_case_admin=False, is_org_admin=False)
                     "labelEmpty": s3_str(T("No data available")),
                     "labelMissing": s3_str(T("Date not registered")),
                     "labelClose": s3_str(T("Close")),
+                    "labelExport": s3_str(T("Export Data")),
                     }
             from core import JSONSEPARATORS
             script = '''$('#%(selector)s').registrationHistory(%(options)s);''' % \
@@ -1418,6 +1429,12 @@ def pr_person_controller(**attr):
     privileged = administration or auth.s3_has_roles(PRIVILEGED)
 
     QUARTERMASTER = auth.s3_has_role("QUARTERMASTER") and not privileged
+
+    # Add custom components
+    # - must happen before prep, so selectors from filters do not
+    #   get resolved as virtual fields prematurely
+    if current.request.controller in ("dvr", "counsel"):
+        configure_person_tags()
 
     # Custom prep
     standard_prep = s3.prep
