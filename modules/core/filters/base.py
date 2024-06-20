@@ -870,8 +870,8 @@ class FilterForm:
         default_filters = {}
 
         get_vars = request.get_vars
-        if get_vars.get("default_filters") == "0":
-            # Skip default filters (e.g. link in report)
+        if get_vars.pop("default_filters", None) == "0":
+            # Skip default filters (e.g. session filter, or links in reports)
             return default_filters
 
         # Do we have filter defaults for this table?
@@ -891,8 +891,8 @@ class FilterForm:
             # Do not apply defaults of hidden widgets because they are
             # not visible to the user
             widget_opts = filter_widget.opts
-            if widget_opts.get("hidden"):
-                continue
+            #if widget_opts.get("hidden"):
+                #continue
 
             # Skip widget if there are no defaults
             if table_defaults is None and "default" not in widget_opts:

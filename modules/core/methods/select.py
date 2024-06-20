@@ -31,7 +31,7 @@ from ..filters import FilterForm
 from ..tools import FormKey, get_crud_string
 
 from .base import CRUDMethod
-from .crud import S3CRUD
+from .crud import BasicCRUD
 
 __all__ = ("Select",
            )
@@ -125,12 +125,11 @@ class Select(CRUDMethod):
                 # Hide datatable filter box if we have a filter form
                 if "dt_searching" not in dtargs:
                     dtargs["dt_searching"] = False
-                # Override default ajax URL if we have default filters
+                # Set Ajax URL
+                ajax_vars = dict(get_vars)
                 if default_filters:
-                    ajax_vars = dict(get_vars)
                     ajax_vars.update(default_filters)
-                    ajax_url = r.url(representation = "aadata", vars = ajax_vars)
-                    dtargs["dt_ajax_url"] = ajax_url
+                dtargs["dt_ajax_url"] = r.url(representation="aadata", vars=ajax_vars)
 
             attr["dtargs"] = dtargs
 
@@ -263,7 +262,6 @@ class Select(CRUDMethod):
         #try:
         #    options = json.load(s)
         #except JSONERRORS:
-        #    raise
         #    options = None
         #if not isinstance(options, dict):
         #    r.error(400, "Invalid request options")
@@ -415,7 +413,7 @@ class Select(CRUDMethod):
 
         # Linkto
         if not linkto:
-            linkto = S3CRUD._linkto(r)
+            linkto = BasicCRUD._linkto(r)
 
         left = []
         dtargs = attr.get("dtargs", {})
@@ -464,7 +462,7 @@ class Select(CRUDMethod):
             dtargs["dt_pagination"] = dt_pagination
             dtargs["dt_pageLength"] = display_length
             dtargs["dt_base_url"] = r.url(method="", vars={})
-            dtargs["dt_permalink"] = r.url()
+            dtargs["dt_list_url"] = r.url(method="", vars={})
             datatable = dt.html(totalrows, displayrows, **dtargs)
 
             # View + data

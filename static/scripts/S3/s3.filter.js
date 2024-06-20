@@ -101,10 +101,10 @@ S3.search = {};
         s.processData = false;
 
         // Construct new Ajax URL
-        delete queryDict['$search'];
+        delete queryDict.$search;
         var ajaxURL = path + '?$search=' + method;
         if (action) {
-            delete queryDict['$action'];
+            delete queryDict.$action;
             ajaxURL = ajaxURL + '&$action=' + action;
         }
 
@@ -257,7 +257,7 @@ S3.search = {};
 
         // If no form has been specified, find the first one
         if (undefined === form) {
-            form = $('body').find('form.filter-form').first();
+            form = $('.filter-form').first();
         }
 
         // Temporarily disable auto-submit
@@ -362,7 +362,7 @@ S3.search = {};
 
         // Fall back to first filter form in page
         if (typeof form == 'undefined') {
-            form = $('body').find('form.filter-form').first();
+            form = $('.filter-form').first();
         }
 
         var i,
@@ -376,7 +376,7 @@ S3.search = {};
             operator;
 
         // Text widgets
-        form.find('.text-filter:visible').each(function() {
+        $('.text-filter', form).each(function() {
             $this = $(this);
             id = $this.attr('id');
             urlVar = $('#' + id + '-data').val();
@@ -407,15 +407,11 @@ S3.search = {};
         });
 
         // Options widgets
-        form.find('.s3-groupedopts-widget:visible').prev(
-                  '.options-filter.groupedopts-filter-widget')
+        $('.s3-groupedopts-widget', form).prev('.options-filter.groupedopts-filter-widget')
         .add(
-        form.find('.ui-multiselect:visible').prev(
-                  '.options-filter.multiselect-filter-widget'))
+        $('.ui-multiselect', form).prev('.options-filter.multiselect-filter-widget'))
         .add(
-        form.find('.options-filter:visible,' +
-                  '.options-filter.multiselect-filter-widget.active' /*+
-                  ',.options-filter.multiselect-filter-bootstrap.active'*/))
+        $('.options-filter,.options-filter.multiselect-filter-widget', form))
         .each(function() {
             $this = $(this);
             id = $this.attr('id');
@@ -472,7 +468,7 @@ S3.search = {};
         });
 
         // Map widgets
-        form.find('.map-filter').each(function() {
+        $('.map-filter', form).each(function() {
 
             $this = $(this);
             id = $this.attr('id');
@@ -487,7 +483,7 @@ S3.search = {};
         });
 
         // Numerical range widgets -- each widget has two inputs.
-        form.find('.range-filter-input:visible').each(function() {
+        $('.range-filter-input', form).each(function() {
 
             $this = $(this);
             id = $this.attr('id');
@@ -502,9 +498,14 @@ S3.search = {};
         });
 
         // Date(time) range widgets -- each widget has two inputs.
-        form.find('.date-filter-input:visible').each(function() {
+        $('.date-filter-input', form).each(function() {
 
             $this = $(this);
+            // Skip if not yet initialized
+            if (!$this.calendarWidget('instance')) {
+                return;
+            }
+
             id = $this.attr('id');
             urlVar = $('#' + id + '-data').val();
             value = $this.val();
@@ -610,15 +611,11 @@ S3.search = {};
         });
 
         // Location widgets
-        form.find('.s3-groupedopts-widget:visible').prev(
-                  '.location-filter.groupedopts-filter-widget')
+        $('.s3-groupedopts-widget', form).prev('.location-filter.groupedopts-filter-widget')
         .add(
-        form.find('.ui-multiselect:visible').prev(
-                  '.location-filter.multiselect-filter-widget')
+        $('.ui-multiselect', form).prev('.location-filter.multiselect-filter-widget'))
         .add(
-        form.find('.location-filter:visible,' +
-                  '.location-filter.multiselect-filter-widget.active' /*+
-          ',.location-filter.multiselect-filter-bootstrap.active'*/)))
+        $('.location-filter,.location-filter.multiselect-filter-widget', form))
         .each(function() {
 
             $this = $(this);
@@ -660,7 +657,7 @@ S3.search = {};
         });
 
         // Hierarchy filter (experimental)
-        form.find('.hierarchy-filter:visible').each(function() {
+        $('.hierarchy-filter', form).each(function() {
 
             $this = $(this);
             id = $this.attr('id');
@@ -689,7 +686,7 @@ S3.search = {};
         });
 
         // Age filter widgets -- each widget has two inputs.
-        form.find('.age-filter-input:visible').each(function() {
+        $('.age-filter-input', form).each(function() {
 
             $this = $(this);
             id = $this.attr('id');
@@ -718,7 +715,7 @@ S3.search = {};
         });
 
         // Value filter widgets
-        $('.value-filter:visible', form).each(function() {
+        $('.value-filter', form).each(function() {
 
             $this = $(this);
             id = $this.attr('id');
@@ -734,6 +731,12 @@ S3.search = {};
         // Other widgets go here...
 
         // return queries to caller
+        if (queries.filter(function(f) { return f[1] != null; }).length) {
+            form.addClass('has-active-filters');
+        } else {
+            form.removeClass('has-active-filters');
+        }
+
         return queries;
     };
 
@@ -746,7 +749,7 @@ S3.search = {};
     var setCurrentFilters = function(form, queries) {
 
         if (undefined === form) {
-            form = $('body').find('form.filter-form').first();
+            form = $('.filter-form').first();
         }
 
         // Temporarily disable auto-submit
@@ -2310,6 +2313,11 @@ S3.search = {};
                     s3_debug(status);
                 }
             );
+        });
+
+        // Determine whether the form has active filters
+        $('.filter-form').each(function() {
+            getCurrentFilters($(this));
         });
 
         // Don't submit if pressing Enter

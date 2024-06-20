@@ -147,6 +147,7 @@ def event_overdue(code, interval):
 # -------------------------------------------------------------------------
 def pr_person_resource(r, tablename):
 
+    T = current.T
     s3db = current.s3db
     auth = current.auth
 
@@ -155,9 +156,11 @@ def pr_person_resource(r, tablename):
     controller = r.controller
     if controller in ("dvr", "counsel"):
 
+        case_administration = has_permission("create", "pr_person")
+
         # Users who can not register new residents also have only
         # limited write-access to basic details of residents
-        if not has_permission("create", "pr_person"):
+        if not case_administration:
 
             # Cannot modify any fields in main person record
             ptable = s3db.pr_person
@@ -192,34 +195,51 @@ def pr_person_resource(r, tablename):
         resource = r.resource
         if not r.component and resource.tablename == "pr_person":
 
-            if controller == "dvr" and auth.s3_has_role("ADMIN"):
-                # Configure anonymize-method
-                from core import Anonymize
-                s3db.set_method("pr_person", method="anonymize", action=Anonymize)
+            if controller == "dvr":
 
-                # Configure anonymize-rules
-                from ..anonymize import anonymize_rules
-                resource.configure(anonymize=anonymize_rules())
+                bulk_actions = []
 
-                # Configure anonymize bulk-action
-                resource.configure(bulk_actions = ({"label": current.T("Anonymize"),
-                                                    "mode": "ajax",
-                                                    "url": r.url(method="anonymize", representation="json", vars={}),
-                                                    },
-                                                   ),
-                                   )
+                if case_administration and \
+                   has_permission("update", "cr_shelter_registration"):
 
-            # Disabled due to requirement for skills to create templates:
-            ## Configure case document template methods
-            #from .doc import CaseDocumentTemplates
-            #s3db.set_method("pr_person",
-            #                method = "templates",
-            #                action = CaseDocumentTemplates,
-            #                )
-            #s3db.set_method("pr_person",
-            #                method = "template",
-            #                action = s3db.pr_Template,
-            #                )
+                    from ..shelter import BulkRegistration
+                    s3db.set_method("pr_person", method="checkout", action=BulkRegistration)
+
+                    bulk_actions.append({"label": T("Check-out"),
+                                         "mode": "ajax",
+                                         "url": r.url(method="checkout", representation="json", vars={}),
+                                         "confirm": T("Do you want to check-out these residents?"),
+                                         })
+
+                if auth.s3_has_role("ADMIN"):
+                    # Configure anonymize-method
+                    from core import Anonymize
+                    s3db.set_method("pr_person", method="anonymize", action=Anonymize)
+
+                    # Configure anonymize-rules
+                    from ..anonymize import anonymize_rules
+                    resource.configure(anonymize=anonymize_rules())
+
+                    # Configure anonymize bulk-action
+                    bulk_actions.append({"label": T("Anonymize"),
+                                         "mode": "ajax",
+                                         "url": r.url(method="anonymize", representation="json", vars={}),
+                                         })
+
+                if bulk_actions:
+                    resource.configure(bulk_actions = bulk_actions)
+
+                # Disabled due to requirement for skills to create templates:
+                ## Configure case document template methods
+                #from .doc import CaseDocumentTemplates
+                #s3db.set_method("pr_person",
+                #                method = "templates",
+                #                action = CaseDocumentTemplates,
+                #                )
+                #s3db.set_method("pr_person",
+                #                method = "template",
+                #                action = s3db.pr_Template,
+                #                )
 
     # Do not include acronym in Case-Org Representation
     table = s3db.dvr_case
@@ -752,22 +772,29 @@ def configure_case_list_fields(resource,
         orderby = "pr_person.last_name, pr_person.first_name"
 
     # Custom list fields
+    available_list_fields = [(T("ID"), "pe_label"),
+                             (T("Principal Ref.No."), "dvr_case.reference"),
+                             (T("BAMF Ref.No."), "bamf.value"),
+                             # TODO "dvr_case.organisation_id", # not default
+                             "last_name",
+                             "first_name",
+                             "date_of_birth",
+                             # TODO age, # not default
+                             "gender",
+                             # TODO "person_details.marital_status", # not default
+                             "person_details.nationality",
+                             # TODO residence status / permit, # not default
+                             (T("Size of Family"), "dvr_case.household_size"),
+                             case_status,
+                             case_date,
+                             shelter,
+                             unit,
+                             # TODO presence (at assigned shelter), # not default
+                             "dvr_case.last_seen_on",
+                             ]
     if fmt in ("xlsx", "xls"):
-        list_fields = [(T("ID"), "pe_label"),
-                       (T("Principal Ref.No."), "dvr_case.reference"),
-                       (T("BAMF Ref.No."), "bamf.value"),
-                       "last_name",
-                       "first_name",
-                       "date_of_birth",
-                       "gender",
-                       "person_details.nationality",
-                       (T("Size of Family"), "dvr_case.household_size"),
-                       case_status,
-                       case_date,
-                       shelter,
-                       unit,
-                       "dvr_case.last_seen_on",
-                       ]
+        # Export all available list fields by default
+        list_fields = available_list_fields
     else:
         list_fields = [(T("ID"), "pe_label"),
                        "last_name",
@@ -781,7 +808,9 @@ def configure_case_list_fields(resource,
                        unit,
                        ]
 
+
     resource.configure(list_fields = list_fields,
+                       available_list_fields = available_list_fields,
                        orderby = orderby,
                        )
 
@@ -1166,16 +1195,16 @@ def configure_security_person_controller(r):
                                 _class="profile-header",
                                 )
 
-        notes_widget = dict(label = "Security Notes",
-                            label_create = "Add Note",
-                            type = "datatable",
-                            tablename = "dvr_note",
-                            filter = ((FS("note_type_id$name") == "Security") & \
-                                        (FS("person_id") == person_id)),
-                            #icon = "report",
-                            create_controller = "dvr",
-                            create_function = "note",
-                            )
+        notes_widget = {"label": "Security Notes",
+                        "label_create": "Add Note",
+                        "type": "datatable",
+                        "tablename": "dvr_note",
+                        "filter": (FS("note_type_id$name") == "Security") & \
+                                  (FS("person_id") == person_id),
+                        #"icon": "report",
+                        "create_controller": "dvr",
+                        "create_function": "note",
+                        }
         profile_widgets = [notes_widget]
     else:
         profile_header = None
@@ -1528,7 +1557,17 @@ def pr_person_controller(**attr):
     # Custom rheader tabs
     from ..rheaders import dvr_rheader, hrm_rheader, default_rheader
     if current.request.controller in ("dvr", "counsel"):
+
         attr["rheader"] = dvr_rheader
+        attr["variable_columns"] = True
+        #attr["dtargs"] = {"dt_double_scroll": True}
+
+        # Allow selection of Organisation with case imports
+        from ..helpers import managed_orgs_field
+        attr["csv_extra_fields"] = [{"label": "Organisation",
+                                     "field": managed_orgs_field,
+                                     }]
+
     elif current.request.controller == "hrm":
         attr["rheader"] = hrm_rheader
     elif current.request.controller == "default":

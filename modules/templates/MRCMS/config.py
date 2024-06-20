@@ -133,6 +133,7 @@ def config(settings):
     #
     settings.ui.calendar_clear_icon = True
     settings.ui.auth_user_represent = "name"
+    settings.ui.datatables_responsive = False
 
     # -------------------------------------------------------------------------
     # AUTH Settings
@@ -282,7 +283,7 @@ def config(settings):
     # Use org-specific appointment types
     settings.dvr.appointment_types_org_specific = True
     # Appointments can be marked as mandatory
-    settings.dvr.mandatory_appointments = True
+    settings.dvr.mandatory_appointments = False
     # Appointments update last-seen-on when completed
     settings.dvr.appointments_update_last_seen_on = True
     # Appointments update case status when completed

@@ -273,6 +273,7 @@ table.dataTable {
     }
 
     .dataTables_processing {
+        z-index: 99;
         padding: 1rem 0 2rem;
         top: 2.5rem;
         left: 30%;
@@ -335,6 +336,39 @@ table.dataTable {
     }
 }
 
+// Independent scrolling and sticky header for non-responsive data tables
+.dt-wrapper.scrollable {
+    .dataTable_table {
+        max-height: 80vh;
+        overflow: scroll;
+        scroll-snap-type: y proximity;
+        th, td {
+            scroll-snap-align: end;
+        }
+        .dataTable {
+            border-collapse: separate;
+            border-spacing: 0;
+            border-bottom: 0;
+            th, td {
+                border-top-width: 0;
+                border-right-width: 0;
+            }
+            tr th:last-child,
+            tr td:last-child {
+                border-right-width: 1px;
+            }
+            thead {
+                tr:first-child th {
+                    border-top-width: 1px
+                }
+                position: sticky;
+                top: 0;
+                background-color: $datatables_bgcolor_head;
+            }
+        }
+    }
+}
+
 // ----------------------------------------------------------------------------
 // Export Options
 //
@@ -345,9 +379,8 @@ table.dataTable {
         padding-top: 0;
         margin: 0 0.2rem;
         .dt-export {
-            float: right;
-            margin: 0 0.1rem;
-            padding: 1px;
+            display: inline-block;
+            margin: 0 0.15rem;
             cursor: pointer;
             height: 16px;
             width: 16px;
@@ -388,8 +421,44 @@ table.dataTable {
     }
     [dir=rtl] & {
         float: left;
-        .dt-export {
-            float: left;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Variable columns dialog
+//
+.dt-variable-columns {
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    padding: 0.2rem;
+    color: #666;
+    min-width: 2.5rem;
+    &:hover {
+        border-color: #aaa;
+        background-color: #eee;
+    }
+    cursor: pointer;
+}
+.column-selector {
+    .column-options {
+        list-style: none;
+        margin: 0.5rem auto;
+        &.ui-sortable {
+            .ui-sortable-handle {
+                margin: 2px auto;
+                border: 1px solid #ccc;
+            }
+            .sortable-placeholder {
+                background-color: #fff7d8;
+            }
+        }
+        .available-column {
+            margin: 0;
+            padding: 0.2rem 0;
+            line-height: normal;
+            .column-select {
+                margin: 0.3rem;
+            }
         }
     }
 }

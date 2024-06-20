@@ -31,7 +31,9 @@ __all__ = ("DataTable",
 import re
 
 from gluon import current, URL, \
-                  A, DIV, FORM, INPUT, SPAN, TABLE, TBODY, TD, TH, THEAD, TR
+                  A, BUTTON, DIV, FORM, INPUT, LABEL, LI, SPAN, \
+                  TABLE, TBODY, TD, TH, THEAD, TR, UL
+
 from gluon.serializers import json as jsons
 
 from s3dal import Expression, S3DAL
@@ -302,6 +304,9 @@ class DataTable:
                 ** Searching
                 dt_searching: Enable or disable filtering of data.
 
+                ** Variable Columns
+                dt_available_cols: [[index, label, selector, active], ...]
+
                 ** Row Actions
                 dt_row_actions: list of actions (each a dict), overrides
                                 current.response.s3.actions
@@ -515,18 +520,33 @@ class DataTable:
 
         # Build the form
         form = FORM(_class="dt-wrapper")
+        if not settings.get_ui_datatables_responsive():
+            form.add_class("scrollable")
 
         # Form key (XSRF protection for Ajax actions)
         formkey = attr_get("dt_formkey")
         if formkey:
             form["hidden"] = {"_formkey": formkey}
 
-        # Export formats
+        # Links and Export Formats
+        elements = cls.links(list_url = attr.get("dt_list_url"),
+                             select_url = attr_get("dt_select_url"),
+                             )
+        if elements:
+            elements.append(" | ")
+
         if not s3.no_formats:
-            form.append(cls.export_formats(base_url = attr_get("dt_base_url"),
-                                           permalink = attr_get("dt_permalink"),
-                                           rfields = rfields,
-                                           ))
+            exports = cls.exports(base_url = attr_get("dt_base_url"),
+                                  rfields = rfields,
+                                  )
+            if len(exports):
+                elements.append(exports)
+            else:
+                elements = elements[:-1]
+
+        if elements:
+            form.append(DIV(*elements, _class="dt-export-options"))
+
         # The HTML table
         form.append(table)
 
@@ -551,6 +571,11 @@ class DataTable:
             add_hidden("mode", "dataTable_bulkMode", "Inclusive")
             add_hidden("selected", "dataTable_bulkSelection", "[%s]" % bulk_selected)
             add_hidden("filterURL", "dataTable_filterURL", config["ajaxUrl"])
+
+        # Variable columns selector
+        available_cols = attr.get("dt_available_cols")
+        if available_cols:
+            form.append(cls.column_selector(available_cols))
 
         # InitComplete callback (processed in views/dataTables.html)
         callback = settings.get_ui_datatables_initComplete()
@@ -650,6 +675,47 @@ class DataTable:
 
     # -------------------------------------------------------------------------
     @staticmethod
+    def column_selector(available_cols):
+        # TODO docstring
+        # TODO implement select-all
+
+        T = current.T
+
+        subform = DIV(_class="column-selector columns hide")
+
+        options = UL(_class="column-options")
+        for index, label, selector, status in available_cols:
+            row = LABEL(INPUT(_type="checkbox",
+                              _value=index,
+                              _class = "column-select",
+                              data = {"selector": selector, "index": index},
+                              value = status,
+                              ),
+                        label,
+                        _class = "available-column",
+                        )
+            options.append(LI(row))
+        subform.append(options)
+
+        subform.append(DIV(BUTTON(T("Submit"),
+                                  _class = "submit-form-btn small primary button",
+                                  _type = "button",
+                                  _style = "margin-bottom:0.3rem;"
+                                  ),
+                           A(T("Cancel"),
+                             _class = "cancel-form-btn action-lnk",
+                             _href = "javascript:void(0)",
+                             ),
+                           A(T("Reset"),
+                             _class = "reset-form-btn action-lnk",
+                             _href = "javascript:void(0)",
+                             ),
+                           ))
+
+        return subform
+
+    # -------------------------------------------------------------------------
+    @staticmethod
     def bulk_checkbox(dbid):
         """
             Constructs a checkbox to select a row for bulk action
@@ -669,21 +735,47 @@ class DataTable:
 
     # -------------------------------------------------------------------------
     @staticmethod
-    def export_formats(base_url = None,
-                       permalink = None,
-                       rfields = None,
-                       ):
+    def links(select_url=None, list_url=None):
+        """
+            Construct method links
+
+            Args:
+                select_url: link to the bulk-select method
+                list_url: link to the default list method (suppressed by select_url)
+
+            Returns:
+                a list of elements to construct a DIV with
+        """
+
+        T = current.T
+
+        links = []
+
+        if select_url:
+            link = A(T("Select"), _href=select_url)
+            links.extend([link, " | "])
+
+        elif list_url:
+            link = A(T("List"), _href=list_url)
+            links.extend([link, " | "])
+
+        return links[:-1]
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def exports(base_url=None, rfields = None):
         """
             Constructs the export options widget
 
             Args:
                 base_url: the base URL of the datatable (without
                           method or query vars) to construct export URLs
-                permalink: the search result URL (including filters) for
-                           the user to bookmark
                 rfields: the table columns (list of S3ResourceField) to
                          auto-detect export format options, e.g. KML if
                          there is a location reference
+
+            Returns:
+                a SPAN with export options
 
             Notes:
                 - the overall list of possible export formats (and their
@@ -719,13 +811,12 @@ class DataTable:
             default_url = "%s?%s" % (default_url, query)
 
         # Construct row of export icons
-        # - icons appear in reverse order due to float-right
-        icons = SPAN(_class = "list_formats")
+        options = SPAN(_class="list_formats")
 
         # All export formats
         export_formats = settings.get_ui_export_formats()
         if export_formats:
-            icons.append("%s:" % T("Export as"))
+            options.append("%s:" % T("Export as"))
 
             # Default available formats
             default_formats = ("xlsx", "pdf")
@@ -768,31 +859,13 @@ class DataTable:
                     else:
                         title = EXPORT % {"format": fmt.upper()}
 
-                icons.append(DIV(_class = css_class,
-                                 _title = title,
-                                 data = {"url": url,
-                                         "extension": fmt.split(".")[-1],
-                                         },
-                                 ))
-
-        export_options = DIV(_class = "dt-export-options")
-
-        # Append the permalink (if any)
-        if permalink is not None:
-            label = settings.get_ui_label_permalink()
-            if label:
-                link = A(T(label),
-                         _href = permalink,
-                         _class = "permalink",
-                         )
-                export_options.append(link)
-                if len(icons):
-                    export_options.append(" | ")
-
-        # Append the icons
-        export_options.append(icons)
-
-        return export_options
+                options.append(DIV(_class = css_class,
+                                   _title = title,
+                                   data = {"url": url,
+                                           "extension": fmt.split(".")[-1],
+                                           },
+                                   ))
+        return options
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -828,6 +901,7 @@ class DataTable:
                    "selectAction": T("Select Action"),
                    "selectedRecords": T("Selected Records"),
                    "executeBulkAction": T("OK"),
+                   "selectColumns": T("Select Columns"),
                    }
 
         return "\n".join('''i18n.%s="%s"'''% (k, v) for k, v in strings.items())
