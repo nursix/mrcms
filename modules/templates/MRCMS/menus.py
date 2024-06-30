@@ -47,6 +47,8 @@ class MainMenu(default.MainMenu):
         has_role = auth.s3_has_role
         has_permission = auth.s3_has_permission
 
+        is_admin = has_role("ADMIN")
+
         # Single or multiple organisations?
         if has_permission("create", "org_organisation", c="org", f="organisation"):
             organisation_id = None
@@ -54,7 +56,7 @@ class MainMenu(default.MainMenu):
             organisation_id = get_default_organisation()
 
         # Organisation menu
-        c = ("org", "hrm") if has_role("ADMIN") else ("org", "hrm", "cms")
+        c = ("org", "hrm") if is_admin else ("org", "hrm", "cms")
         f = ("organisation", "*")
         if organisation_id:
             org_menu = MM("Organization", c=c, f=f, args=[organisation_id], ignore_args=True)
@@ -75,7 +77,10 @@ class MainMenu(default.MainMenu):
 
         return [
             MM("Clients", c=("dvr", "pr"), f=("person", "*")),
-            MM("Food Distribution", c="dvr", f="case_event", m="register_food", p="create", restrict="CATERING"),
+            MM("Food Distribution", c="dvr", f="case_event", m="register_food", p="create",
+               restrict = "CATERING",
+               check = not is_admin,
+               ),
             shelter_menu,
             MM("Counseling", c=("counsel", "pr"), f=("person", "*")),
             org_menu,
@@ -317,21 +322,12 @@ class OptionsMenu(default.OptionsMenu):
                     M("Cases", c="dvr", f="person", m="report",
                       restrict = (ADMIN, ORG_ADMIN, "CASE_ADMIN"),
                       ),
-                    #M("Check-in overdue", c=("dvr", "pr"), f="person",
-                    #  restrict = (ADMIN, ORG_ADMIN, "CASE_ADMIN"),
-                    #  vars = {"overdue": "check-in"},
-                    #  ),
-                    #M("Food Distribution overdue", c=("dvr", "pr"), f="person",
-                    #  restrict = (ADMIN, ORG_ADMIN, "CASE_ADMIN"),
-                    #  vars = {"overdue": "FOOD*"},
-                    #  ),
-                    #M("Clients Reports", c="dvr", f="site_activity",
-                    #  ),
-                    #M("Food Distribution Statistics", c="dvr", f="case_event",
-                    #  m = "report",
-                    #  restrict = (ADMIN, ORG_ADMIN),
-                    #  vars = {"code": "FOOD*"},
-                    #  ),
+                    ),
+                M("Reports", link=False)(
+                    M("Presence", c="dvr", f="person", m="presence_report",
+                      t = "org_site_presence_event", p="read",
+                      restrict = (ADMIN, ORG_ADMIN, "CASE_ADMIN"),
+                      ),
                     ),
                 M("Archive", link=False)(
                     M("Closed Cases", f="person",
