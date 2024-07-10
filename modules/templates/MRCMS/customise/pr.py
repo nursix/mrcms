@@ -197,7 +197,7 @@ def pr_person_resource(r, tablename):
 
             if controller == "dvr":
 
-                from ..presence import PresenceReport
+                from ..reports import PresenceReport
                 s3db.set_method("pr_person", method="presence_report", action=PresenceReport)
 
                 bulk_actions = []
@@ -232,17 +232,10 @@ def pr_person_resource(r, tablename):
                 if bulk_actions:
                     resource.configure(bulk_actions = bulk_actions)
 
-                # Disabled due to requirement for skills to create templates:
+                ## Disabled due to requirement for skills to create templates:
                 ## Configure case document template methods
-                #from .doc import CaseDocumentTemplates
-                #s3db.set_method("pr_person",
-                #                method = "templates",
-                #                action = CaseDocumentTemplates,
-                #                )
-                #s3db.set_method("pr_person",
-                #                method = "template",
-                #                action = s3db.pr_Template,
-                #                )
+                #from .doc import GenerateCaseDocument
+                #GenerateCaseDocument.configure("pr_person")
 
     # Do not include acronym in Case-Org Representation
     table = s3db.dvr_case
@@ -290,7 +283,14 @@ def configure_person_tags():
                                                     },
                                                   "multiple": False,
                                                   },
-                                                 )
+                                                 ),
+                                dvr_case_language = ({"name": "mother_tongue",
+                                                      "joinby": "person_id",
+                                                      "filterby": {
+                                                          "quality": "N",
+                                                          },
+                                                      },
+                                                     ),
                                 )
 
 # -------------------------------------------------------------------------
@@ -651,6 +651,9 @@ def configure_case_filters(resource, organisation_id=None, privileged=False):
                           ),
             AgeFilter("date_of_birth",
                       label = T("Age"),
+                      extra_options = [("6 %s" % T("months"), "-6M")],
+                      #exact = "from",
+                      zero = "0",
                       hidden = True,
                       ),
             OptionsFilter("person_details.nationality",
@@ -776,16 +779,17 @@ def configure_case_list_fields(resource,
 
     # Custom list fields
     available_list_fields = [(T("ID"), "pe_label"),
+                             "dvr_case.organisation_id",
                              (T("Principal Ref.No."), "dvr_case.reference"),
                              (T("BAMF Ref.No."), "bamf.value"),
-                             # TODO "dvr_case.organisation_id", # not default
                              "last_name",
                              "first_name",
                              "date_of_birth",
                              # TODO age, # not default
                              "gender",
-                             # TODO "person_details.marital_status", # not default
+                             "person_details.marital_status",
                              "person_details.nationality",
+                             "mother_tongue.language",
                              # TODO residence status / permit, # not default
                              (T("Size of Family"), "dvr_case.household_size"),
                              case_status,
@@ -795,22 +799,30 @@ def configure_case_list_fields(resource,
                              # TODO presence (at assigned shelter), # not default
                              "dvr_case.last_seen_on",
                              ]
-    if fmt in ("xlsx", "xls"):
-        # Export all available list fields by default
-        list_fields = available_list_fields
-    else:
-        list_fields = [(T("ID"), "pe_label"),
-                       "last_name",
-                       "first_name",
-                       "date_of_birth",
-                       "gender",
-                       "person_details.nationality",
-                       case_status,
-                       case_date,
-                       shelter,
-                       unit,
-                       ]
 
+    list_fields = [(T("ID"), "pe_label"),
+                   "last_name",
+                   "first_name",
+                   "date_of_birth",
+                   "gender",
+                   "person_details.nationality",
+                   case_status,
+                   case_date,
+                   shelter,
+                   unit,
+                   ]
+
+    if fmt in ("xlsx", "xls"):
+        # Include external references
+        list_fields[1:1] = [(T("Principal Ref.No."), "dvr_case.reference"),
+                            (T("BAMF Ref.No."), "bamf.value"),
+                            ]
+
+        # Include household size
+        list_fields.insert(-4, (T("Size of Family"), "dvr_case.household_size"))
+
+        # Include last-seen-on date
+        list_fields.append("dvr_case.last_seen_on")
 
     resource.configure(list_fields = list_fields,
                        available_list_fields = available_list_fields,
@@ -1364,7 +1376,7 @@ def configure_custom_actions(r, output, is_case_admin=False, is_org_admin=False)
                 anonymize = AnonymizeWidget.widget(r, _class="button action-btn anonymize-btn")
                 inject_button(output, anonymize, before="delete_btn", alt=None)
 
-            # Disabled due to requirement for skills to create templates
+            ## Disabled due to requirement for skills to create templates
             #if is_case_admin:
             #    # Doc-From-Template-button (requires appropriate role)
             #    doc_from_template = A(T("Document from Template"),
