@@ -101,6 +101,7 @@ __all__ = (# PR Base Entities
            # Other functions
            "pr_availability_filter",
            "pr_import_prep",
+           "pr_PersonMergeProcess",
 
            # Data List Default Layouts
            #"pr_address_list_layout",
@@ -948,6 +949,7 @@ class PRPersonModel(DataModel):
                                            "presence",
                                            ),
                        super_entity = ("pr_pentity", "sit_trackable"),
+                       merge_process = pr_PersonMergeProcess,
                        )
 
         person_id_comment = pr_person_comment(
@@ -5956,6 +5958,70 @@ def pr_get_entities(pe_ids=None,
             return repr_grp
         else:
             return repr_all
+
+# =============================================================================
+class pr_PersonMergeProcess(MergeProcess):
+    """
+        Low-level merge process for person records
+
+        - extends the default process to handle user accounts linked
+          to the person records
+    """
+
+    # -------------------------------------------------------------------------
+    def prepare(self, original, duplicate):
+        """
+            Prepares the merge process
+            - removes all account links for the duplicate record
+            - deactivates and removes all corresponding user accounts
+
+            Args:
+                original: the original record
+                duplicate: the duplicate record
+        """
+
+        super().prepare(original, duplicate)
+
+        db = current.db
+        s3db = current.s3db
+        auth = current.auth
+
+        # Remove all account links of the duplicate
+        ltable = s3db.pr_person_user
+        query = (ltable.pe_id == duplicate.pe_id) & \
+                (ltable.deleted == False)
+        links = db(query).select(ltable.id, ltable.user_id)
+        user_ids = {l.user_id for l in links}
+        for link in links:
+            self.delete_record(ltable, link)
+
+        # Remove any orphaned accounts
+        utable = auth.settings.table_user
+        left = ltable.on((ltable.user_id == utable.id) & (ltable.deleted == False))
+        query = (utable.id.belongs(user_ids)) & \
+                (ltable.id == None) & \
+                (utable.deleted == False)
+        accounts = db(query).select(utable.id, left=left)
+        auth = current.auth
+        for account in accounts:
+            user_id = account.id
+            auth.s3_anonymise_password(user_id, utable.id, user_id)
+            auth.s3_anonymise_roles(user_id, utable.id, user_id)
+            account.update_record(registration_key="disabled", deleted=True)
+
+    # -------------------------------------------------------------------------
+    def cleanup(self):
+        """
+            Performs cleanup actions at the end of the merge process
+            - Cleans up any duplicate account links (pr_person_user)
+              that may be left behind by the default merge process
+        """
+
+        super().cleanup()
+
+        # Remove any duplicate links from pr_person_user
+        ltable = current.s3db.pr_person_user
+        deduplicate_links(ltable, "pe_id", "user_id")
 
 # =============================================================================
 class pr_RoleRepresent(S3Represent):

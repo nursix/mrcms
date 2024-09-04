@@ -324,6 +324,10 @@ class OptionsMenu(default.OptionsMenu):
                       ),
                     ),
                 M("Reports", link=False)(
+                    M("Arrivals and Departures##shelter", c="dvr", f="person", m="aandd",
+                      t = "cr_shelter_registration_history", p="read",
+                      restrict = ("ADMIN", "ORG_ADMIN", "CASE_ADMIN"),
+                      ),
                     M("Presence", c="dvr", f="person", m="presence_report",
                       t = "org_site_presence_event", p="read",
                       restrict = (ADMIN, ORG_ADMIN, "CASE_ADMIN"),
