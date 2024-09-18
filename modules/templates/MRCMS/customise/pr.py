@@ -203,6 +203,9 @@ def pr_person_resource(r, tablename):
 
                 bulk_actions = []
 
+                get_vars = r.get_vars
+                select_vars = {k:get_vars[k] for k in get_vars.keys() & {"closed", "archived"}}
+
                 if case_administration and \
                    has_permission("update", "cr_shelter_registration"):
 
@@ -211,8 +214,7 @@ def pr_person_resource(r, tablename):
 
                     bulk_actions.append({"label": T("Check-out"),
                                          "mode": "ajax",
-                                         "url": r.url(method="checkout", representation="json", vars={}),
-                                         "confirm": T("Do you want to check-out these residents?"),
+                                         "url": r.url(method="checkout", representation="json", vars=select_vars),
                                          })
 
                 if auth.s3_has_role("ADMIN"):
@@ -1411,7 +1413,7 @@ def configure_custom_actions(r, output, is_case_admin=False, is_org_admin=False)
 
             # Inject JS
             appname = current.request.application
-            script = "/%s/static/themes/JUH/js/rhist.js" % appname
+            script = "/%s/static/scripts/templates/MRCMS/rhist.js" % appname
             if script not in s3.scripts:
                 s3.scripts.append(script)
 
