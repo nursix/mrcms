@@ -474,6 +474,8 @@ def config(settings):
     #settings.ui.organizer_time_format = "H:mm"
     # Configure the snap raster width in organizer (hh:mm:ss)
     #settings.ui.organizer_snap_duration = "00:15:00"
+    # Uncomment this to show profile pictures in checkpoint UI only on demand
+    #settings.ui.checkpoint_show_picture = False
 
     # -------------------------------------------------------------------------
     # Sync
@@ -750,8 +752,6 @@ def config(settings):
     #settings.dvr.id_code_pattern = "(?P<label>[^,]*),(?P<first_name>[^,]*),(?P<last_name>[^,]*),(?P<date_of_birth>[^,]*)"
     # Uncomment this to show a warning during event registration if the person is not currently checked-in
     #settings.dvr.event_registration_checkin_warning = True
-    # Uncomment this to show profile pictures in event registration UI only on demand
-    #settings.dvr.event_registration_show_picture = False
 
     # -------------------------------------------------------------------------
     # Events
@@ -995,8 +995,6 @@ def config(settings):
     #settings.inv.shipment_name = "order"
     # Uncomment to validate for Unique Warehouse Codes
     #settings.inv.warehouse_code_unique = True
-    # Uncomment to not track pack values
-    #settings.inv.track_pack_values = False
     #settings.inv.show_mode_of_transport = True
     #settings.inv.send_show_org = False
     #settings.inv.send_show_time_in = True
@@ -1123,6 +1121,8 @@ def config(settings):
     #settings.supply.catalog_multi = False
     # Disable the use of Alternative Items
     #settings.supply.use_alt_name = False
+    # Uncomment to not track pack values
+    #settings.supply.track_pack_values = False
 
     # -------------------------------------------------------------------------
     # Projects

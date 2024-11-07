@@ -326,8 +326,7 @@ class S3Config(Storage):
                 template = getattr(__import__(package, fromlist=[config]), config)
             except ImportError as e:
                 raise RuntimeError("Template not found: %s" % name) from e
-            else:
-                template.config(self)
+            template.config(self)
 
         return self
 
@@ -2017,6 +2016,21 @@ class S3Config(Storage):
         """
         return self.L10n.get("translate_supply_item", False)
 
+    def get_L10n_units_of_measure(self):
+
+        #default_units = {"pc": T("piece"),
+                         #"pair": T("pair"),
+                         #"set": T("set"),
+                         #"mg": T("milligram"),
+                         #"g": T("gram"),
+                         #"kg": T("kilogram"),
+                         #"ml": T("milliliter"),
+                         #"L": T("liter"),
+                         #"m": T("meter"),
+                         #}
+
+        return self.L10n.get("units_of_measure", None)
+
     def get_L10n_pootle_url(self):
         """ URL for Pootle server """
         return self.L10n.get("pootle_url", "http://pootle.sahanafoundation.org/")
@@ -2516,10 +2530,10 @@ class S3Config(Storage):
             'css' is a folder relative to static/styles
             - /jstree.css or /jstree.min.css is added as-required
         """
-        return self.ui.get("hierarchy_theme", dict(css = "plugins",
-                                                   icons = False,
-                                                   stripes = True,
-                                                   ))
+        return self.ui.get("hierarchy_theme", {"css": "plugins",
+                                               "icons": False,
+                                               "stripes": True,
+                                               })
 
     def get_ui_hierarchy_cascade_option_in_tree(self):
         """
@@ -2648,6 +2662,15 @@ class S3Config(Storage):
             Enable year view in organizer
         """
         return self.ui.get("organizer_year_view", False)
+
+    def get_ui_checkpoint_show_picture(self):
+        """
+            Checkpoint-type UI to show client profile picture
+            by default (True), or only on demand (False):
+            - can be set to False (selectively) in order to improve
+              responsiveness of the UI and reduce network traffic
+        """
+        return self.ui.get("checkpoint_show_picture", True)
 
     # =========================================================================
     # Messaging
@@ -3449,15 +3472,6 @@ class S3Config(Storage):
             not checked-in
         """
         return self.dvr.get("event_registration_checkin_warning", False)
-
-    def get_dvr_event_registration_show_picture(self):
-        """
-            Event registration UI to show profile picture
-            by default (True), or only on demand (False):
-            - can be set to False (selectively) in order to improve
-              responsiveness of the UI and reduce network traffic
-        """
-        return self.dvr.get("event_registration_show_picture", True)
 
     def get_dvr_event_registration_exclude_codes(self):
         """
@@ -4395,12 +4409,6 @@ class S3Config(Storage):
             Call Stock Adjustments 'Stock Counts'
         """
         return self.inv.get("stock_count", True)
-
-    def get_inv_track_pack_values(self):
-        """
-            Whether or not Pack values are tracked
-        """
-        return self.inv.get("track_pack_values", True)
 
     def get_inv_item_status(self):
         """
@@ -5395,7 +5403,8 @@ class S3Config(Storage):
         """
             Do we show pack values in Requests?
         """
-        return self.req.get("pack_values", True)
+        return self.get_supply_track_pack_values() and \
+               self.req.get("pack_values", True)
 
     def get_req_multiple_req_items(self):
         """
@@ -5520,11 +5529,42 @@ class S3Config(Storage):
         """
         return self.supply.get("catalog_multi", True)
 
+    def get_supply_item_category_hierarchy(self):
+        """
+            Whether supply item categories are hierarchical
+        """
+        return self.supply.get("item_category_hierarchy", False)
+
+    def get_supply_track_pack_values(self):
+        """
+            Whether to track pack values
+        """
+        return self.supply.get("track_pack_values", False)
+
+    def get_supply_track_pack_dimensions(self):
+        """
+            Whether to track pack dimensions
+        """
+        return self.supply.get("track_pack_dimensions", False)
+
+    def get_supply_generic_items(self):
+        """
+            Track only generic items, i.e. without manufacturing
+            details such as brand, or model/year
+        """
+        return self.supply.get("generic_items", False)
+
+    def get_supply_kits(self):
+        """
+            Supply items can be kits
+        """
+        return self.supply.get("kits", False)
+
     def get_supply_use_alt_name(self):
         """
             Whether to allow Alternative Items to be defined
         """
-        return self.supply.get("use_alt_name", True)
+        return self.supply.get("use_alt_name", False)
 
     def get_supply_shipping_code(self):
         """
@@ -5532,6 +5572,22 @@ class S3Config(Storage):
             - function(prefix, site_id, field)
         """
         return self.supply.get("shipping_code")
+
+    def get_supply_distribution_check_case_flags(self):
+        """
+            Distribution UI to check for required/debarring case flags
+            - requires DVR module
+        """
+        return self.has_module("dvr") and \
+               self.supply.get("distribution_check_case_flags", True)
+
+    def get_supply_distribution_check_resident(self):
+        """
+            Distribution UI to check that client is shelter resident (if required)
+            - requires CR module
+        """
+        return self.has_module("cr") and \
+               self.supply.get("distribution_check_resident", True)
 
     # -------------------------------------------------------------------------
     # Transport

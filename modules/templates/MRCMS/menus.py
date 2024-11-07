@@ -81,8 +81,9 @@ class MainMenu(default.MainMenu):
                restrict = "CATERING",
                check = not is_admin,
                ),
-            shelter_menu,
             MM("Counseling", c=("counsel", "pr"), f=("person", "*")),
+            MM("Supply", c=("supply", "pr"), f=("person", "*")),
+            shelter_menu,
             org_menu,
             MM("Security", c="security", f="seized_item"),
             ]
@@ -433,6 +434,22 @@ class OptionsMenu(default.OptionsMenu):
                     M("Create", m="create"),
                     M("Item Types", f="seized_item_type"),
                     M("Depositories", f="seized_item_depository"),
+                    ),
+                )
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def supply(cls):
+
+        return M(c="supply")(
+                M("Current Cases", c=("supply", "pr"), f="person"),
+                M("Distributions", link=False)(
+                    M("Register", f="distribution", m="register", p="create"),
+                    ),
+                M("Administration", link=False, restrict=["ADMIN", "ORG_ADMIN"])(
+                    M("Distribution Item Sets", f="distribution_set"),
+                    M("Catalogs", f="catalog"),
+                    M("Items", f="item"),
                     ),
                 )
 
