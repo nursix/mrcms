@@ -4,9 +4,13 @@
     License: MIT
 """
 
-from gluon import current
+from collections import OrderedDict
 
-from core import CustomController, IS_ONE_OF, S3SQLCustomForm, S3SQLInlineLink
+from gluon import current, URL
+
+from core import CustomController, IS_ONE_OF, \
+                 DateFilter, OptionsFilter, TextFilter, \
+                 S3SQLCustomForm, S3SQLInlineLink
 
 # -------------------------------------------------------------------------
 def supply_distribution_set_controller(**attr):
@@ -133,6 +137,7 @@ def supply_distribution_resource(r, tablename):
 # -------------------------------------------------------------------------
 def supply_distribution_controller(**attr):
 
+    auth = current.auth
     s3 = current.response.s3
 
     # Custom postp
@@ -142,7 +147,13 @@ def supply_distribution_controller(**attr):
         if callable(standard_postp):
             output = standard_postp(r, output)
 
-        if r.method == "register":
+        if r.interactive and \
+           r.method == "register":
+            if isinstance(output, dict):
+                if auth.permission.has_permission("read", c="supply", f="distribution_item"):
+                    output["return_url"] = URL(c="supply", f="distribution_item")
+                else:
+                    output["return_url"] = URL(c="default", f="index")
             CustomController._view("MRCMS", "register_distribution.html")
         return output
     s3.postp = custom_postp
@@ -152,14 +163,110 @@ def supply_distribution_controller(**attr):
 # -------------------------------------------------------------------------
 def supply_distribution_item_resource(r, tablename):
 
+    T = current.T
     s3db = current.s3db
 
-    # Read-only (except via registration UI)
+    resource = r.resource
+
+    table = s3db.supply_distribution_item
+    field = table.item_id
+    field.represent = s3db.supply_ItemRepresent(show_link=False)
+
+    text_filter_fields = ["item_id$name"]
+
+    # If distributions of multiple organisations accessible
+    # => include organisation in list_fields and filters
+    from ..helpers import permitted_orgs
+    if len(permitted_orgs("read", "supply_distribution")) > 1:
+        organisation_id = "distribution_id$organisation_id"
+        org_filter = OptionsFilter(organisation_id, hidden=True)
+    else:
+        organisation_id = org_filter = None
+
+    # If in primary distribution item controller
+    # => include beneficiary in list fields and filters
+    if resource.tablename == "supply_distribution_item":
+        pe_label = (T("ID"), "person_id$pe_label")
+        person_id = (T("Name"), "person_id")
+        # Show person name as link to case file (supply perspective)
+        field = table.person_id
+        field.represent = s3db.pr_PersonRepresent(show_link = True,
+                                                  linkto = URL(c = "supply",
+                                                               f = "person",
+                                                               args = ["[id]", "distribution_item"],
+                                                               ),
+                                                  )
+        text_filter_fields.extend(["person_id$pe_label",
+                                   "person_id$last_name",
+                                   "person_id$first_name",
+                                   ])
+    else:
+        pe_label = person_id = None
+
+    # Filter widgets
+    # - filterable by mode, distribution date and site
+    try:
+        filter_options = OrderedDict(table.mode.requires.options())
+        filter_options.pop(None, None)
+    except AttributeError:
+        filter_options = None
+    filter_widgets = [TextFilter(text_filter_fields,
+                                 label = T("Search"),
+                                 ),
+                      OptionsFilter("mode",
+                                    options = filter_options,
+                                    cols = 4,
+                                    sort = False,
+                                    hidden = True,
+                                    ),
+                      DateFilter("distribution_id$date",
+                                 hidden = True,
+                                 ),
+                      org_filter,
+                      OptionsFilter("distribution_id$site_id",
+                                    hidden = True,
+                                    ),
+                      ]
+
+    # List fields
+    # - include distribution date and site
+    list_fields = ["distribution_id$date",
+                   organisation_id,
+                   "distribution_id$site_id",
+                   pe_label,
+                   person_id,
+                   "mode",
+                   "item_id",
+                   "quantity",
+                   "item_pack_id",
+                   "distribution_id$human_resource_id",
+                   ]
+
+    # Update table configuration
     s3db.configure("supply_distribution_item",
+                   filter_widgets = filter_widgets,
+                   list_fields = list_fields,
+                   # Read-only (except via registration UI)
                    insertable = False,
                    editable = False,
                    deletable = False,
                    )
+
+    if resource.tablename == "supply_distribution_item":
+        # Install report method
+        from ..reports import GrantsTotalReport
+        s3db.set_method("supply_distribution_item",
+                        method = "grants_total",
+                        action = GrantsTotalReport,
+                        )
+
+        # Update CRUD strings for perspective
+        crud_strings = current.response.s3.crud_strings
+        crud_strings["supply_distribution_item"].update({
+            "title_list": T("Distributed Items"),
+            "title_display": T("Distributed Item"),
+            "label_list_button": T("List Distributed Items"),
+            })
 
 # -------------------------------------------------------------------------
 def supply_item_resource(r, tablename):
@@ -183,20 +290,55 @@ def supply_item_resource(r, tablename):
 
             break
 
-    # TODO Move into prep:
-    list_fields = ["name",
-                   "code",
-                   "um",
-                   "item_category_id",
-                   "catalog_id",
-                   # TODO show catalog organisation only if user can access
-                   #      catalogs from multiple orgs?
-                   #      => also add filter for catalog organisation
-                   "catalog_id$organisation_id",
-                   ]
+# -------------------------------------------------------------------------
+def supply_item_controller(**attr):
 
-    s3db.configure("supply_item",
-                   list_fields = list_fields,
-                   )
+    s3db = current.s3db
+
+    s3 = current.response.s3
+
+    # Custom postp
+    standard_prep = s3.prep
+    def prep(r):
+        # Call standard prep
+        result = standard_prep(r) if callable(standard_prep) else True
+
+        from ..helpers import permitted_orgs
+        organisation_ids = permitted_orgs("read", "supply_catalog")
+        if len(organisation_ids) > 1:
+            # Include organisation_id in list_fields
+            organisation_id = "catalog_id$organisation_id"
+        else:
+            organisation_id = None
+
+        if r.interactive:
+            # Add organisation filter if organisation_id is shown
+            filter_widgets = r.resource.get_config("filter_widgets")
+            if filter_widgets and organisation_id:
+                ctable = s3db.supply_catalog
+                filter_opts = ctable.organisation_id.represent.bulk(organisation_ids)
+                filter_opts.pop(None, None)
+                filter_widgets.append(OptionsFilter(organisation_id,
+                                                    options = filter_opts,
+                                                    hidden = True,
+                                                    ))
+
+        # Custom list fields
+        list_fields = ["name",
+                       "code",
+                       "um",
+                       "item_category_id",
+                       "catalog_id",
+                       organisation_id,
+                       ]
+
+        s3db.configure("supply_item",
+                       list_fields = list_fields,
+                       )
+
+        return result
+    s3.prep = prep
+
+    return attr
 
 # END =========================================================================

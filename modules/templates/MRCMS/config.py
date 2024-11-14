@@ -142,6 +142,9 @@ def config(settings):
     settings.ui.auth_user_represent = "name"
     settings.ui.datatables_responsive = False
 
+    # Do not pre-select family members for checkpoint registration
+    #settings.ui.checkpoint_multi_preselect_all = False
+
     # -------------------------------------------------------------------------
     # AUTH Settings
     #
@@ -515,13 +518,15 @@ def config(settings):
                                   supply_distribution_resource, \
                                   supply_distribution_controller, \
                                   supply_distribution_item_resource, \
-                                  supply_item_resource
+                                  supply_item_resource, \
+                                  supply_item_controller
 
     settings.customise_supply_distribution_set_controller = supply_distribution_set_controller
     settings.customise_supply_distribution_resource = supply_distribution_resource
     settings.customise_supply_distribution_controller = supply_distribution_controller
     settings.customise_supply_distribution_item_resource = supply_distribution_item_resource
     settings.customise_supply_item_resource = supply_item_resource
+    settings.customise_supply_item_controller = supply_item_controller
 
     # -------------------------------------------------------------------------
     # Security settings
