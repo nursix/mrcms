@@ -343,6 +343,8 @@ S3.search = {};
         form.trigger('optionChanged');
     };
 
+    S3.search.clearFilters = clearFilters;
+
     /**
      * Regex for the operator in a filter expression
      */
@@ -2743,15 +2745,14 @@ S3.search = {};
          */
         _load: function() {
 
-            var el = this.element,
-                filters = this.options.filters;
+            const filterForm = $(this.element).closest('form'),
+                  filters = this.options.filters;
 
-            var filter_id = $(el).val();
+            S3.search.clearFilters(filterForm);
+
+            let filter_id = $(el).val();
             if (filter_id && filters.hasOwnProperty(filter_id)) {
-                S3.search.setCurrentFilters($(el).closest('form'), filters[filter_id]);
-            } else {
-                // @todo: clear filters? => not in global scope
-                // S3.search.clearFilters($(this).closest('form'));
+                S3.search.setCurrentFilters(filterForm, filters[filter_id]);
             }
         },
 
