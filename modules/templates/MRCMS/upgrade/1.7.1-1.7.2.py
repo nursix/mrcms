@@ -35,6 +35,8 @@ atable = s3db.dvr_case_activity
 IMPORT_XSLT_FOLDER = os.path.join(request.folder, "static", "formats", "s3csv")
 TEMPLATE_FOLDER = os.path.join(request.folder, "modules", "templates", "MRCMS")
 
+settings.base.debug = True
+
 # -----------------------------------------------------------------------------
 # Rename needs
 #
@@ -279,7 +281,7 @@ if not failed:
         activity_ids = [activity.id for activity in empty]
 
         resource = s3db.resource("dvr_case_activity", id=activity_ids)
-        deleted = resource.delete(cascade=True)
+        deleted = resource.delete(cascade=True, log_errors=True)
 
         infoln("...done (%s activities deleted)" % deleted)
     else:
@@ -307,7 +309,7 @@ if not failed:
     themes = db(query).select(ttable.id)
 
     resource = s3db.resource("dvr_response_theme", id=[t.id for t in themes])
-    deleted = resource.delete(cascade=True)
+    deleted = resource.delete(cascade=True, log_errors=True)
     if deleted == len(themes):
         infoln("...done (%s themes removed)" % deleted)
     else:
@@ -336,7 +338,7 @@ if not failed:
     activities = db(query).select(atable.id)
 
     resource = s3db.resource("dvr_case_activity", id=[a.id for a in activities])
-    deleted = resource.delete(cascade=True)
+    deleted = resource.delete(cascade=True, log_errors=True)
     if deleted != len(activities):
         error = resource.error or "unknown error"
         infoln("...cannot delete obsolete activities (%s)" % error)
@@ -345,7 +347,7 @@ if not failed:
     # Remove the need types
     if not failed:
         resource = s3db.resource("dvr_need", id=list(need_ids))
-        deleted = resource.delete(cascade=True)
+        deleted = resource.delete(cascade=True, log_errors=True)
         if deleted == len(needs):
             infoln("...done (%s need types removed)" % deleted)
         else:
