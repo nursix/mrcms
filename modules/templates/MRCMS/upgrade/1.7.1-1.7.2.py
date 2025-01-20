@@ -247,6 +247,7 @@ if not failed:
 
     updated = 0
     for item in details:
+        activity_ids.add(item.case_activity_id)
         theme_id = replace_ids.get(item.theme_id)
         if theme_id:
             item.update_record(theme_id = theme_id,
@@ -310,7 +311,9 @@ if not failed:
     if deleted == len(themes):
         infoln("...done (%s themes removed)" % deleted)
     else:
-        infoln("...failed")
+        error = resource.error or "unknown error"
+        infoln("...failed (%s)" % error)
+        failed = True
 
 # -----------------------------------------------------------------------------
 # Remove obsolete need types
@@ -333,16 +336,22 @@ if not failed:
     activities = db(query).select(atable.id)
 
     resource = s3db.resource("dvr_case_activity", id=[a.id for a in activities])
-    resource.delete(cascade=True)
+    deleted = resource.delete(cascade=True)
+    if deleted != len(activities):
+        error = resource.error or "unknown error"
+        infoln("...cannot delete obsolete activities (%s)" % error)
+        failed = True
 
     # Remove the need types
-    resource = s3db.resource("dvr_need", id=list(need_ids))
-    deleted = resource.delete(cascade=True)
-    if deleted == len(needs):
-        infoln("...done (%s need types removed)" % deleted)
-    else:
-        infoln("...failed")
-        failed = True
+    if not failed:
+        resource = s3db.resource("dvr_need", id=list(need_ids))
+        deleted = resource.delete(cascade=True)
+        if deleted == len(needs):
+            infoln("...done (%s need types removed)" % deleted)
+        else:
+            error = resource.error or "unknown error"
+            infoln("...failed (%s)" % error)
+            failed = True
 
 # -----------------------------------------------------------------------------
 # Import new need types
