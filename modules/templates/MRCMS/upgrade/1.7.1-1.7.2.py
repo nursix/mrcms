@@ -212,7 +212,7 @@ if not failed:
         info(".")
         updated += 1
 
-    infoln("...done (%s themes updated, %s not found, %s measures fixed)" % (updated, missing, linked))
+    infoln("...done (%s themes updated, %s not found, %s entries fixed)" % (updated, missing, linked))
 
 # -----------------------------------------------------------------------------
 # Replace themes
@@ -231,15 +231,26 @@ if not failed:
                "Dolmetscherkoordination": "Unterbringungssituation",
                }
 
-    names = set(replace.keys()) | set(replace.values())
-
-    query = (ttable.name.belongs(names)) & \
+    # Look up the IDs of the new themes
+    query = (ttable.name.belongs(replace.values())) & \
             (ttable.deleted == False)
     rows = db(query).select(ttable.id, ttable.name)
-    themes = {row.name: row.id for row in rows}
+    new_themes = {row.name: row.id for row in rows}
 
-    replace_ids = {themes[k]: themes[v] for k, v in replace.items()}
+    # Look up the IDs of all matching old themes
+    # NOTE: can be multiple IDs per name
+    replace_ids = {}
+    query = (ttable.name.belongs(replace.keys())) & \
+            (ttable.deleted == False)
+    rows = db(query).select(ttable.id, ttable.name)
 
+    # Determine replace IDs {old:new}
+    for row in rows:
+        replace_by = replace.get(row.name)
+        if replace_by:
+            replace_ids[row.id] = new_themes.get(replace_by)
+
+    # Look up all response theme details
     query = (ltable.theme_id.belongs(replace_ids.keys())) & \
             (ltable.deleted == False)
     details = db(query).select(ltable.id,
@@ -247,7 +258,7 @@ if not failed:
                                ltable.theme_id,
                                )
 
-    updated = 0
+    updated, failed = 0, 0
     for item in details:
         activity_ids.add(item.case_activity_id)
         theme_id = replace_ids.get(item.theme_id)
@@ -261,8 +272,13 @@ if not failed:
             updated += 1
         else:
             info("-")
+            failed += 1
 
-    infoln("...done (%s measures updated)" % updated)
+    if failed:
+        failed = True
+        infoln("...failed (%s entries out of %s could not be migrated)" % (failed, len(details)))
+    else:
+        infoln("...done (%s entries updated)" % updated)
 
 # -----------------------------------------------------------------------------
 
