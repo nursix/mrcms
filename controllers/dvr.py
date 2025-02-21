@@ -354,6 +354,10 @@ def person():
                             field.writable = False
                             field.comment = None
 
+            elif r.component_name == "case_task":
+
+                s3db.dvr_configure_case_tasks(r)
+
         # Module-specific list fields (must be outside of r.interactive)
         list_fields = [#"dvr_case.reference",
                        #"pe_label",
@@ -1181,6 +1185,27 @@ def note_type():
     """ Note Types: RESTful CRUD Controller """
 
     return crud_controller()
+
+# =============================================================================
+# Case Tasks
+#
+def task():
+    """ Case Tasks: CRUD controller """
+
+    settings.base.bigtable = True
+
+    def prep(r):
+
+        s3db.dvr_configure_case_tasks(r)
+
+        resource = r.resource
+        r.resource.configure(insertable = False,
+                             deletable = False,
+                             )
+        return True
+    s3.prep = prep
+
+    return crud_controller(rheader=s3db.dvr_rheader)
 
 # =============================================================================
 # Residence Status

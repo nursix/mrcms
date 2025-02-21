@@ -32,6 +32,7 @@ def config(settings):
                                       ("counsel", "person"): ("pr", "person"),
                                       ("counsel", "group_membership"): ("pr", "group_membership"),
                                       ("counsel", "document"): ("doc", "document"),
+                                      ("counsel", "task"): ("dvr", "task"),
                                       ("counsel", "need"): ("dvr", "need"),
                                       ("counsel", "response_action"): ("dvr", "response_action"),
                                       ("counsel", "response_type"): ("dvr", "response_type"),
@@ -392,6 +393,7 @@ def config(settings):
                                dvr_case_event_type_controller, \
                                dvr_case_flag_controller, \
                                dvr_note_resource, \
+                               dvr_task_controller, \
                                dvr_service_contact_resource
 
     settings.customise_dvr_home = dvr_home
@@ -411,6 +413,7 @@ def config(settings):
     settings.customise_dvr_case_flag_controller = dvr_case_flag_controller
 
     settings.customise_dvr_note_resource = dvr_note_resource
+    settings.customise_dvr_task_controller = dvr_task_controller
     settings.customise_dvr_service_contact_resource = dvr_service_contact_resource
 
     # -------------------------------------------------------------------------
@@ -668,6 +671,11 @@ def config(settings):
             name_nice = T("Counseling"),
             restricted = True,
             module_type = 10,
+        )),
+        ("med", Storage(
+            name_nice = T("Medical Journal"),
+            #description = "Emergency Medical Journal",
+            module_type = None, # No menu entry
         )),
         #("event", Storage(
         #   name_nice = T("Events"),

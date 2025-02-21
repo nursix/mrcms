@@ -1149,6 +1149,14 @@ class PRPersonModel(DataModel):
                        # Tags
                        pr_person_tag = "person_id",
 
+                       # Medical Record
+                       med_patient = "person_id",
+                       med_vaccination = "person_id",
+                       med_medication = "person_id",
+                       med_anamnesis = {"joinby": "person_id",
+                                        "multiple": False,
+                                        },
+
                        # Seized Items (owner)
                        security_seized_item = "person_id",
 
@@ -1190,6 +1198,9 @@ class PRPersonModel(DataModel):
                        dvr_response_action = "person_id",
                        dvr_allowance = "person_id",
                        dvr_note = {"name": "case_note",
+                                   "joinby": "person_id",
+                                   },
+                       dvr_task = {"name": "case_task",
                                    "joinby": "person_id",
                                    },
                        dvr_residence_status = "person_id",
@@ -3759,8 +3770,6 @@ class PRImageModel(DataModel):
     def model(self):
 
         T = current.T
-        db = current.db
-        request = current.request
 
         # ---------------------------------------------------------------------
         # Image
@@ -6275,12 +6284,8 @@ class pr_PersonRepresent(S3Represent):
                 controller = "vol"
             else:
                 c = request.controller
-                if c == "hrm":
-                    controller = "hrm"
-                elif c == "vol":
-                    controller = "vol"
-                elif c == "dvr":
-                    controller = "dvr"
+                if c in ("hrm", "vol", "dvr", "med"):
+                    controller = c
                 else:
                     controller = "pr"
             linkto = URL(c=controller, f="person", args=["[id]"], extension="")

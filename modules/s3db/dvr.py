@@ -35,6 +35,7 @@ __all__ = ("DVRCaseModel",
            "DVRCaseEventModel",
            "DVRNeedsModel",
            "DVRNotesModel",
+           "DVRTaskModel",
            "DVRReferralModel",
            "DVRResponseModel",
            "DVRVulnerabilityModel",
@@ -46,12 +47,14 @@ __all__ = ("DVRCaseModel",
            "dvr_ResponseThemeRepresent",
            "dvr_VulnerabilityRepresent",
 
+           "dvr_get_case",
            "dvr_case_organisation",
            "dvr_case_default_status",
            "dvr_case_status_filter_opts",
 
            "dvr_configure_vulnerability_types",
            "dvr_configure_case_vulnerabilities",
+           "dvr_configure_case_tasks",
 
            "dvr_case_activity_default_status",
            "dvr_case_activity_form",
@@ -1222,6 +1225,306 @@ class DVRNeedsModel(DataModel):
 
         return {"dvr_need_id": FieldTemplate.dummy("need_id"),
                 }
+
+# =============================================================================
+class DVRTaskModel(DataModel):
+    """ To-Do-lists for case files """
+
+    names = ("dvr_task",
+             "dvr_task_category",
+             "dvr_task_status",
+             )
+
+    def model(self):
+
+        T = current.T
+        #db = current.db
+
+        crud_strings = current.response.s3.crud_strings
+
+        define_table = self.define_table
+
+        # ---------------------------------------------------------------------
+        # Task Status
+        #
+        task_status = (("NEW", T("Pending")),
+                       ("PROC", T("In Progress")),
+                       ("NA", T("Not Actionable")),
+                       ("DONE", T("Done")),
+                       ("DEF", T("Deferred")),
+                       ("OBS", T("Obsolete")),
+                       )
+
+        status_represent = S3PriorityRepresent(task_status,
+                                               {"NEW": "lightblue",
+                                                "PROC": "amber",
+                                                "NA": "red",
+                                                "DONE": "green",
+                                                "DEF": "grey",
+                                                "OBS": "black",
+                                                }).represent
+
+        # ---------------------------------------------------------------------
+        # Task Category
+        #
+        task_category = {"A": T("Administrative"),
+                         "C": T("Counseling"),
+                         "S": T("Supply"),
+                         "H": T("Health"),
+                         }
+
+        # ---------------------------------------------------------------------
+        # Tasks
+        #
+        tablename = "dvr_task"
+        define_table(tablename,
+                     self.pr_person_id(
+                         comment = False,
+                         writable = False,
+                         ),
+                     self.dvr_case_id(
+                         readable = False,
+                         writable = False,
+                         ),
+                     self.org_organisation_id(
+                         readable = False,
+                         writable = False,
+                         ),
+                     DateField(
+                         default = "now",
+                         label = T("Date"),
+                         # Enable in template if/as required:
+                         readable = False,
+                         writable = False,
+                         ),
+                     Field("category",
+                           label = T("Category"),
+                           default = "A",
+                           requires = IS_IN_SET(task_category, zero=None),
+                           represent = represent_option(task_category),
+                           readable = False,
+                           writable = False,
+                           ),
+                     Field("name",
+                           label = T("Subject"),
+                           requires = IS_NOT_EMPTY(),
+                           represent = lambda v, row=None: v if v else "-",
+                           ),
+                     CommentsField("description",
+                                   label = T("Details"),
+                                   comment = None,
+                                   ),
+                     Field("status",
+                           default = "NEW",
+                           requires = IS_IN_SET(task_status,
+                                                sort = False,
+                                                zero = None,
+                                                ),
+                           represent = status_represent,
+                           ),
+                     self.hrm_human_resource_id(
+                         label = T("Staff"),
+                         ),
+                     DateField("due_date",
+                               label = T("Date Due"),
+                               represent = self.due_date_represent,
+                               ),
+                     # Priority ranking (see task_ondefine.due_date_dt_orderby)
+                     Field("rank", "integer",
+                           default = 1,
+                           # set automatically onaccept
+                           readable = False,
+                           writable = False,
+                           ),
+                     DateTimeField("status_date",
+                                   readable = False,
+                                   writable = False,
+                                   ),
+                     Field("previous_status",
+                           readable = False,
+                           writable = False,
+                           ),
+                     DateTimeField("closed_on",
+                                   readable = False,
+                                   writable = False,
+                                   ),
+                     CommentsField(),
+                     on_define = self.task_ondefine,
+                     )
+
+        # Table configuration
+        self.configure(tablename,
+                       onaccept = self.task_onaccept,
+                       )
+
+        # CRUD Strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Create Task"),
+            title_display = T("Task Details"),
+            title_list = T("Tasks"),
+            title_update = T("Edit Task"),
+            label_list_button = T("List Tasks"),
+            label_delete_button = T("Delete Task"),
+            msg_record_created = T("Task added"),
+            msg_record_modified = T("Task updated"),
+            msg_record_deleted = T("Task deleted"),
+            msg_list_empty = T("No Tasks found"),
+            )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        return {"dvr_task_category": task_category,
+                "dvr_task_status": task_status,
+                }
+
+    # -------------------------------------------------------------------------
+    def defaults(self):
+        """ Safe defaults for names in case the module is disabled """
+
+        return {"dvr_task_category": {},
+                "dvr_task_status": {},
+                }
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def task_ondefine(table):
+        """
+            Ondefine-routine for task table:
+            - configure special datatable orderby-rule for due date
+
+            Args:
+                table: the dvr_task table
+        """
+
+        def due_date_dt_orderby(field, direction, orderby, left_joins):
+            """
+                Sorting the datatable by due-date maintains a constant
+                order of status groupings (using the sorting priority
+                which is set onaccept)
+            """
+
+            sorting = {"table": field.tablename,
+                       "direction": direction,
+                       }
+            orderby.append("%(table)s.rank asc,%(table)s.due_date%(direction)s,%(table)s.created_on%(direction)s" % sorting)
+
+        table.due_date.represent.dt_orderby = due_date_dt_orderby
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def task_onaccept(form):
+        """
+            Onaccept-routine for tasks
+            - detect status change and set status_date / closed_on
+            - set case_id and organisation_id
+            - set sorting priority (combined ranking by status+due-date)
+        """
+
+        # Get form record ID
+        record_id = get_form_record_id(form)
+        if not record_id:
+            return
+
+        db = current.db
+        s3db = current.s3db
+
+        # Re-read record
+        table = s3db.dvr_task
+        query = (table.id == record_id) & \
+                (table.deleted == False)
+        record = db(query).select(table.id,
+                                  table.person_id,
+                                  table.case_id,
+                                  table.organisation_id,
+                                  table.status,
+                                  table.due_date,
+                                  table.previous_status,
+                                  table.status_date,
+                                  table.closed_on,
+                                  limitby = (0, 1),
+                                  ).first()
+        if not record:
+            return
+
+        update = {"previous_status": record.status,
+                  # System-side update
+                  "modified_on": table.modified_on,
+                  "modified_by": table.modified_by,
+                  }
+
+        # Set transition dates
+        now = current.request.utcnow
+        if record.status != record.previous_status:
+            update["status_date"] = now
+        if record.status == "DONE":
+            if not record.closed_on:
+                update["closed_on"] = now
+        elif record.closed_on:
+            update["closed_on"] = None
+
+        # Set case and organisation
+        if not record.case_id:
+            case = dvr_get_case(record.person_id, archived=False)
+            update["case_id"] = case.id
+            update["organisation_id"] = case.organisation_id
+        elif not record.organisation_id:
+            ctable = s3db.dvr_case
+            case = db(ctable.id==record.case_id).select(ctable.id,
+                                                        ctable.organisation_id,
+                                                        limitby = (0, 1),
+                                                        ).first()
+            update["organisation_id"] = case.organisation_id
+
+        # Set priority ranking (1=top)
+        # - actionable tasks first, closed tasks last
+        status_priority = {"NEW": 1,
+                           "PROC": 1,
+                           "NA": 3,
+                           "DONE": 5,
+                           "DEF": 7,
+                           "OBS": 7,
+                           }
+        rank = status_priority.get(record.status, 9)
+        # - tasks with due-date rank higher than those without
+        if not record.due_date:
+            rank += 1
+        update["rank"] = rank
+
+        record.update_record(**update)
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def due_date_represent(value, row=None):
+        """
+            Represent due-date with color marking indicating how close
+            the due date is
+
+            Args:
+                value: the field value
+                row: the Row (unused, for framework compatibility)
+
+            Returns:
+                SPAN.due-date
+        """
+
+        due = None
+        if value:
+            dtstr = S3DateTime.date_represent(value, utc=True)
+            distance = value - datetime.datetime.utcnow().date()
+            if distance.days <= 1:
+                due = "due-now"
+            elif distance.days <= 4:
+                due = "due-next"
+            elif distance.days <= 8:
+                due = "due-soon"
+        else:
+            dtstr = "-"
+
+        output = SPAN(dtstr, _class="due-date")
+        if due:
+            output.add_class(due)
+        return output
 
 # =============================================================================
 class DVRNotesModel(DataModel):
@@ -5220,8 +5523,17 @@ class DVRServiceContactModel(DataModel):
         return None
 
 # =============================================================================
-def dvr_case_organisation(person_id):
-    # TODO docstring
+def dvr_get_case(person_id, archived=None):
+    """
+        Looks up the latest (open) case for a person
+
+        Args:
+            person_id: the person ID
+            archived: True|False to exclude valid|invalid cases
+
+        Returns:
+            the case (dvr_case Row)
+    """
 
     db = current.db
     s3db = current.s3db
@@ -5233,6 +5545,8 @@ def dvr_case_organisation(person_id):
     left = stable.on(stable.id == ctable.status_id)
     query = (ctable.person_id == person_id) & \
             (ctable.deleted == False)
+    if archived is not None:
+        query &= (ctable.archived == archived)
     rows = db(query).select(ctable.id,
                             ctable.organisation_id,
                             stable.is_closed,
@@ -5247,6 +5561,22 @@ def dvr_case_organisation(person_id):
                 break
         if not case:
             case = rows.first().dvr_case
+
+    return case
+
+# -----------------------------------------------------------------------------
+def dvr_case_organisation(person_id):
+    """
+        Looks up the case organisation for a person
+
+        Args:
+            person_id: the person ID
+
+        Returns:
+            the organisation ID
+    """
+
+    case = dvr_get_case(person_id)
 
     return case.organisation_id if case else None
 
@@ -5378,6 +5708,156 @@ def dvr_configure_case_vulnerabilities(person_id):
         field.requires = IS_ONE_OF(dbset, "dvr_vulnerability.id",
                                    field.represent,
                                    )
+
+# -----------------------------------------------------------------------------
+def dvr_configure_case_tasks(r, categories=False, default_category=None):
+    """
+        Configures case tasks; to be called from prep()
+
+        Args:
+            r: the CRUDRequest
+            categories: list|set|tuple of categories to use,
+                        True to use all categories, False to use none
+            default_category: the default task category when using multiple
+
+        Note:
+            When using multiple task categories, the field will be exposed
+            in the form and list, and a category filter will be added. When
+            not using categories, all tasks will fall into the default
+            category (see DVRTaskModel).
+    """
+
+    T = current.T
+
+    db = current.db
+    s3db = current.s3db
+
+    record = r.record
+    organisation_id = None
+
+    if r.tablename == "dvr_task":
+        on_tab = False
+        resource = r.resource
+        if record:
+            # Use the task organisation
+            organisation_id = record.organisation_id
+    elif r.component_name == "case_task":
+        on_tab = True
+        resource = r.component
+        if r.component_id:
+            # Look up the task organisation
+            ttable = s3db.dvr_task
+            query = (ttable.id == r.component_id)
+            row = db(query).select(ttable.organisation_id, limitby=(0, 1)).first()
+            organisation_id = row.organisation_id if row else None
+        elif record:
+            # Look up the case organisation
+            organisation_id = s3db.dvr_case_organisation(record.id)
+    else:
+        return
+
+    table = resource.table
+
+    # Limit HR selection to relevant organisation
+    if organisation_id:
+        htable = s3db.hrm_human_resource
+        dbset = db((htable.organisation_id==organisation_id) & \
+                   (htable.status == 1))
+        field = table.human_resource_id
+        field.requires = IS_EMPTY_OR(IS_ONE_OF(dbset,
+                                               "hrm_human_resource.id",
+                                               field.represent,
+                                               ))
+
+    # Hide person_id from form (shown in rheader instead), show as link to ToDo-tab
+    field = table.person_id
+    field.readable = field.writable = False
+    field.represent = s3db.pr_PersonRepresent(linkto = URL(c = r.controller,
+                                                           f = "person",
+                                                           args = ["[id]", "case_task"],
+                                                           extension = "",
+                                                           ),
+                                               show_link = True,
+                                               )
+
+    if on_tab:
+        text_search_fields = ["name",
+                              "description",
+                              "comments",
+                              ]
+        list_fields = ["due_date",
+                       "name",
+                       "description",
+                       "human_resource_id",
+                       "status",
+                       "comments",
+                       ]
+
+    else:
+        text_search_fields = ["person_id$pe_label",
+                              "person_id$first_name",
+                              "person_id$middle_name",
+                              "person_id$last_name",
+                              "name",
+                              "description",
+                              "comments"
+                              ]
+        list_fields = ["due_date",
+                       (T("ID"), "person_id$pe_label"),
+                       (T("Name"), "person_id"),
+                       "name",
+                       "human_resource_id",
+                       "status",
+                       "comments",
+                       ]
+
+    # Filter widgets
+    task_status = s3db.dvr_task_status
+    filter_widgets = [TextFilter(text_search_fields,
+                                 label = T("Search"),
+                                 ),
+                      OptionsFilter("status",
+                                    options = OrderedDict(task_status),
+                                    default = ["NEW", "PROC", "NA"],
+                                    cols = 3,
+                                    orientation = "rows",
+                                    sort = False,
+                                    ),
+                      ]
+
+    # Expose category?
+    if categories:
+        hide_category = False
+
+        if categories is True:
+            task_category = s3db.dvr_task_category
+        else:
+            task_category = {k: v for k, v in s3db.dvr_task_category.items() if k in categories}
+            categories = list(task_category.keys())
+            if len(categories) == 1:
+                default_category = categories[0]
+                hide_category = True
+                resource.add_filter(FS("category") == default_category)
+            else:
+                resource.add_filter(FS("category").belongs(categories))
+
+        field = table.category
+        field.requires = IS_IN_SET(task_category, zero=None)
+
+        if default_category and default_category in task_category:
+            field.default = default_category
+
+        if not hide_category:
+            field.readable = field.writable = True
+            filter_widgets.append(OptionsFilter("category",
+                                                label = T("Category"),
+                                                options = task_category,
+                                                ))
+            list_fields.insert(1, "category")
+
+    resource.configure(filter_widgets = filter_widgets,
+                       list_fields = list_fields,
+                       )
 
 # =============================================================================
 def dvr_case_activity_default_status():
@@ -9789,6 +10269,16 @@ def dvr_rheader(r, tabs=None):
 
             rheader_fields = [["reference"],
                               ["status_id"],
+                              ]
+
+        elif tablename == "dvr_task":
+
+            if not tabs:
+                tabs = [(T("Basic Details"), None),
+                        ]
+
+            rheader_fields = [["person_id"],
+                              ["status"],
                               ]
 
         rheader = S3ResourceHeader(rheader_fields, tabs)(r,

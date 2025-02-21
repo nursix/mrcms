@@ -119,6 +119,43 @@ def dvr_case_resource(r, tablename):
                 field.writable = False
 
 # -------------------------------------------------------------------------
+def dvr_task_controller(**attr):
+
+    s3db = current.s3db
+    s3 = current.response.s3
+
+    current.deployment_settings.base.bigtable = True
+
+    # Custom prep
+    standard_prep = s3.prep
+    def prep(r):
+
+        # Call standard prep
+        result = standard_prep(r) if callable(standard_prep) else True
+
+        if r.controller == "counsel":
+            categories = {"A", "C"}
+            default_category = "C"
+        else:
+            categories = {"A"}
+            default_category = "A"
+
+        s3db.dvr_configure_case_tasks(r,
+                                      categories = categories,
+                                      default_category = default_category,
+                                      )
+        resource = r.resource
+        resource.configure(insertable = False,
+                           deletable = False,
+                           )
+        return result
+    s3.prep = prep
+
+    from ..rheaders import dvr_rheader
+    attr["rheader"] = dvr_rheader
+    return attr
+
+# -------------------------------------------------------------------------
 def note_date_dt_orderby(field, direction, orderby, left_joins):
     """
         When sorting notes by date, use created_on to maintain
