@@ -9,8 +9,8 @@ from collections import OrderedDict
 from gluon import current, URL, DIV, H4, P, TAG, IS_EMPTY_OR
 
 from core import BasicCRUD, FS, IS_ONE_OF, \
-                 LocationSelector, PresenceRegistration, S3SQLCustomForm, \
-                 get_form_record_id, s3_fieldmethod, s3_str
+                 LocationSelector, PresenceRegistration, CustomForm, \
+                 get_form_record_id, s3_fieldmethod, s3_str, represent_occupancy
 
 # -------------------------------------------------------------------------
 def client_site_status(person_id, site_id, site_type, case_status):
@@ -329,7 +329,7 @@ def cr_shelter_resource(r, tablename):
 
     # Table configuration
     s3db.configure("cr_shelter",
-                   crud_form = S3SQLCustomForm(*crud_fields),
+                   crud_form = CustomForm(*crud_fields),
                    subheadings = subheadings,
                    realm_components = ("shelter_unit",
                                        ),
@@ -417,6 +417,16 @@ def cr_shelter_controller(**attr):
                 resource.configure(deletable = not row)
             else:
                 resource.configure(deletable = is_admin)
+
+            if r.representation == "json":
+                # Make sure list_fields include site_id
+                # - required by site_id filterOptionsS3 lookup (e.g. act/issue)
+                list_fields = resource.get_config("list_fields")
+                if not list_fields:
+                    list_fields = ["id", "site_id"]
+                elif "site_id" not in list_fields:
+                    list_fields.append("site_id")
+                resource.configure(list_fields=list_fields)
 
         elif r.component_name != "document":
             # Customise doc_document in any case (for inline-attachments)
@@ -560,7 +570,7 @@ def cr_shelter_unit_resource(r, tablename):
 
     table.occupancy = s3_fieldmethod("occupancy",
                                      shelter_unit_occupancy,
-                                     represent = occupancy_represent,
+                                     represent = represent_occupancy,
                                      )
 
     list_fields = [(T("Name"), "name"),
@@ -624,34 +634,6 @@ def shelter_unit_occupancy(row):
         # still indicative of even small free capacity (=show 100%
         # only once it is actually reached, not by rounding)
         return (population * 100 // available)
-
-# -------------------------------------------------------------------------
-def occupancy_represent(value):
-    """
-        Represents occupancy% as progress bar
-
-        Args:
-            value - the occupancy in % (integer >= 0)
-        Returns:
-            DIV.occupancy-bar
-    """
-
-    if value is None:
-        return DIV("?", _class="occupancy-bar")
-    elif not value:
-        value = 0
-        css_class = "occupancy-0"
-    else:
-        reprval = (value - 1) // 10 * 10 + 10
-        if reprval > 100:
-            css_class = "occupancy-exc"
-        else:
-            css_class = "occupancy-%s" % reprval
-
-    return DIV("%s%%" % value,
-               DIV(_class="occupancy %s" % css_class),
-               _class="occupancy-bar",
-               )
 
 # -------------------------------------------------------------------------
 def cr_shelter_unit_controller(**attr):

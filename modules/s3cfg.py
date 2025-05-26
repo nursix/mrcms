@@ -152,6 +152,7 @@ class S3Config(Storage):
 
         super().__init__()
 
+        self.act = Storage()
         self.asset = Storage()
         self.auth = Storage()
         self.auth.email_domains = []
@@ -1018,13 +1019,13 @@ class S3Config(Storage):
         """
             System Name - for the UI & Messaging
         """
-        return self.base.get("system_name", current.T("Eden ASP"))
+        return self.base.get("system_name", current.T("Sahana Eden"))
 
     def get_system_name_short(self):
         """
             System Name (Short Version) - for the UI & Messaging
         """
-        return self.base.get("system_name_short", "Eden ASP")
+        return self.base.get("system_name_short", "Sahana Eden")
 
     def get_base_debug(self):
         """
@@ -1301,7 +1302,18 @@ class S3Config(Storage):
         return airegex
 
     # -------------------------------------------------------------------------
+    # Activity settings
+    #
+    def get_act_issue_site_type(self):
+        """
+            Type of site (tablename) issue reports and tasks can be linked to
+            - None to not link issues or tasks to sites (default)
+        """
+        return self.act.get("issue_site_type", None)
+
+    # -------------------------------------------------------------------------
     # Finance settings
+    #
     def get_fin_currency_writable(self):
         """
             Can the user select a Currency?
@@ -2198,11 +2210,6 @@ class S3Config(Storage):
 
         return self.ui.get("datatables_responsive", True)
 
-    def get_ui_datatables_double_scroll(self):
-        """ Render double scroll bars (top+bottom) for non-responsive data tables """
-
-        return self.ui.get("datatables_double_scroll", False)
-
     def get_ui_auto_open_update(self):
         """
             Render "Open" action buttons in datatables without explicit
@@ -2559,7 +2566,7 @@ class S3Config(Storage):
 
     def get_ui_inline_component_layout(self):
         """
-            Layout for S3SQLInlineComponent
+            Layout for InlineComponent
         """
         # Use this to also catch old-style classes (not recommended):
         #import types
@@ -2567,8 +2574,8 @@ class S3Config(Storage):
 
         layout = self.ui.get("inline_component_layout")
         if not layout:
-            from core import S3SQLSubFormLayout
-            layout = S3SQLSubFormLayout()
+            from core import SubFormLayout
+            layout = SubFormLayout()
         elif isinstance(layout, type):
             # Instantiate only now when it's actually requested
             # (because it may inject JS which is not needed if unused)
@@ -2626,7 +2633,7 @@ class S3Config(Storage):
         return self.__lazy("ui", "menu_logo",
                            URL(c = "static",
                                f = "img",
-                               args = ["eden_asp_small.png"],
+                               args = ["eden_small.png"],
                                )
                            )
 

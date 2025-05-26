@@ -506,6 +506,7 @@ var S3EnableNavigateAwayConfirm = function() {
         // Callbacks
         this.successCallback = ajaxOptions.success;
         this.errorCallback = ajaxOptions.error;
+        this.completeCallback = ajaxOptions.always;
 
         // Prevent callbacks from being executed by $.ajax itself
         options.success = null;
@@ -649,6 +650,27 @@ var S3EnableNavigateAwayConfirm = function() {
     };
 
     /**
+     * Complete-callback
+     *
+     * NB: executed in the context of the options object passed
+     *     to $.ajax (=this), which holds the AjaxS3 instance as
+     *     'AjaxS3' property
+     */
+    AjaxS3.prototype.onComplete = function() {
+
+        // Get the instance form context
+        var self = this.AjaxS3;
+        if (!self) {
+            return;
+        }
+
+        var completeCallback = self.completeCallback;
+        if (completeCallback) {
+            completeCallback.apply(this, arguments);
+        }
+    };
+
+    /**
      * Start processing this instance
      * - shows initial activity message
      * - sends the request
@@ -691,6 +713,8 @@ var S3EnableNavigateAwayConfirm = function() {
             this.AjaxS3.onSuccess.apply(this, arguments);
         }).fail(function() {
             this.AjaxS3.onFailure.apply(this, arguments);
+        }).always(function() {
+            this.AjaxS3.onComplete.apply(this, arguments);
         });
     };
 
@@ -962,8 +986,8 @@ S3.openPopup = function(url, center) {
      * @param {string} setting.prefix - the inline form prefix (default: 'default')
      * @param {string} setting.alias - the component alias for the inline form (e.g. task_project)
      * @param {string} setting.name - the field name
-     * @param {string} setting.inlineType - the inline form type, 'link' (for S3SQLInlineLink),
-     *                                      or 'sub' (for other S3SQLInlineComponent types)
+     * @param {string} setting.inlineType - the inline form type, 'link' (for InlineLink),
+     *                                      or 'sub' (for other InlineComponent types)
      * @param {string} setting.inlineRows - the inline form has multiple rows, default: true
      */
     var getSelector = function(setting) {

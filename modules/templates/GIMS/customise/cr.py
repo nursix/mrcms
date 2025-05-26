@@ -135,9 +135,9 @@ def cr_shelter_resource(r, tablename):
                      RangeFilter, \
                      LocationSelector, \
                      S3PriorityRepresent, \
-                     S3SQLCustomForm, \
-                     S3SQLInlineComponent, \
-                     S3SQLInlineLink, \
+                     CustomForm, \
+                     InlineComponent, \
+                     InlineLink, \
                      TextFilter, \
                      get_filter_options, \
                      s3_fieldmethod
@@ -216,7 +216,7 @@ def cr_shelter_resource(r, tablename):
                    "organisation_id",
                    "name",
                    "shelter_type_id",
-                   S3SQLInlineLink(
+                   InlineLink(
                         "shelter_service",
                         field = "service_id",
                         label = T("Services"),
@@ -233,13 +233,13 @@ def cr_shelter_resource(r, tablename):
                    "email",
                    # ----- Capacity and Population -----
                    "capacity",
-                   S3SQLInlineComponent("population",
-                                        label = T("Current Population##shelter"),
-                                        fields = ["type_id",
-                                                  "population_adults",
-                                                  (T("Population (Minors)"), "population_children"),
-                                                  ],
-                                        ),
+                   InlineComponent("population",
+                                   label = T("Current Population##shelter"),
+                                   fields = ["type_id",
+                                             "population_adults",
+                                             (T("Population (Minors)"), "population_children"),
+                                             ],
+                                   ),
                    "population",
                    "population_adults",
                    "population_children",
@@ -303,7 +303,7 @@ def cr_shelter_resource(r, tablename):
         list_fields.append("shelter_service__link.service_id")
 
     s3db.configure("cr_shelter",
-                   crud_form = S3SQLCustomForm(*crud_fields),
+                   crud_form = CustomForm(*crud_fields),
                    subheadings = subheadings,
                    extra_fields = ["contact_name",
                                    "phone",
@@ -575,11 +575,10 @@ def cr_reception_center_resource(r, tablename):
     table = current.s3db.cr_reception_center
 
     # Field methods for computed values by estimated capacity
-    from core import s3_fieldmethod
-    from ..models.cr import CRReceptionCenterModel
+    from core import s3_fieldmethod, represent_occupancy
     table.occupancy_rate_estimate = s3_fieldmethod("occupancy_rate_estimate",
                                                    occupancy_rate_estimate,
-                                                   represent = CRReceptionCenterModel.occupancy_represent,
+                                                   represent = represent_occupancy,
                                                    )
     table.free_capacity_estimate = s3_fieldmethod("free_capacity_estimate",
                                                   free_capacity_estimate,

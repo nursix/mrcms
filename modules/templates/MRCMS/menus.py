@@ -56,7 +56,7 @@ class MainMenu(default.MainMenu):
             organisation_id = get_default_organisation()
 
         # Organisation menu
-        c = ("org", "hrm") if is_admin else ("org", "hrm", "cms")
+        c = ("org", "hrm", "act") if is_admin else ("org", "hrm", "act", "cms")
         f = ("organisation", "*")
         if organisation_id:
             org_menu = MM("Organization", c=c, f=f, args=[organisation_id], ignore_args=True)
@@ -75,7 +75,7 @@ class MainMenu(default.MainMenu):
         else:
             shelter_menu = MM("Shelters", c="cr", f="shelter")
 
-        return [
+        menu = [
             MM("Clients", c=("dvr", "pr"), f=("person", "*")),
             MM("Food Distribution", c="dvr", f="case_event", m="register_food", p="create",
                restrict = "CATERING",
@@ -86,7 +86,14 @@ class MainMenu(default.MainMenu):
             shelter_menu,
             org_menu,
             MM("Security", c="security", f="seized_item"),
+            # MM("To Do", c="act", f=("my_open_tasks", "task", "issue")),
             ]
+
+        # Optional entries
+        if current.deployment_settings.get_custom("manage_work_orders", True):
+            menu.append(MM("To Do", c="act", f=("my_open_tasks", "task", "issue")))
+
+        return menu
 
     # -------------------------------------------------------------------------
     @classmethod
@@ -195,7 +202,26 @@ class OptionsMenu(default.OptionsMenu):
     @classmethod
     def act(cls):
 
-        return cls.org()
+        if current.request.function == "activity":
+            menu = cls.org()
+        else:
+            if current.s3db.act_task_is_manager():
+                tasks = M("Work Orders", f="task")(
+                            M("My Work Orders", f="my_open_tasks"),
+                            M("All Work Orders", f="task"),
+                            M("Create", m="create"),
+                            )
+            else:
+                tasks = M("My Work Orders", f="my_open_tasks")
+
+            menu = M(c="act")(
+                        tasks,
+                        M("Issue Reports", f="issue")(
+                            M("Create", m="create"),
+                            ),
+                        )
+
+        return menu
 
     # -------------------------------------------------------------------------
     @classmethod
@@ -437,8 +463,7 @@ class OptionsMenu(default.OptionsMenu):
                 )
 
     # -------------------------------------------------------------------------
-    @classmethod
-    def supply(cls):
+    def supply(self):
 
         return M(c="supply")(
                 M("Current Cases", c=("supply", "pr"), f="person"),

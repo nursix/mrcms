@@ -56,7 +56,7 @@ from gluon.html import *
 from ..methods import BasicCRUD
 from ..tools import IS_ONE_OF, get_crud_string, s3_decode_iso_datetime, \
                     s3_str
-from ..ui import S3SQLDefaultForm, S3PentityAutocompleteWidget
+from ..ui import DefaultForm, S3PentityAutocompleteWidget
 
 PHONECHARS = string.digits
 TWITTERCHARS = "%s%s_" % (string.digits, string.ascii_letters)
@@ -2099,14 +2099,7 @@ class S3Msg:
         if not channel:
             return "No Such RSS Channel: %s" % channel_id
 
-        # http://pythonhosted.org/feedparser
-        # Python 3.x: Requires pip install sgmllib3k
-        if sys.version_info[1] >= 7:
-            # Use 6.0.0b1 which is required for Python 3.7
-            import feedparser
-        else:
-            # Python 3.6 requires 5.2.1 with 2to3 run on it to prevent SSL: CERTIFICATE_VERIFY_FAILED
-            import feedparser5213 as feedparser
+        import feedparser
 
         # Basic Authentication
         username = channel.username
@@ -2969,24 +2962,27 @@ class S3Compose(BasicCRUD):
                 (T("Recipients"),
                  T("Please enter the first few letters of the Person/Group for the autocomplete.")))
 
-        sqlform = S3SQLDefaultForm()
+        crud_form = DefaultForm()
 
         s3resource = s3db.resource
-        logform = sqlform(request = request,
-                          resource = s3resource("msg_message"),
-                          onvalidation = self._compose_onvalidation,
-                          message = "Message Sent",
-                          format = "html")
+        logform = crud_form(request = request,
+                            resource = s3resource("msg_message"),
+                            onvalidation = self._compose_onvalidation,
+                            message = "Message Sent",
+                            format = "html",
+                            )
 
-        outboxform = sqlform(request = request,
-                             resource = s3resource("msg_outbox"),
+        outboxform = crud_form(request = request,
+                               resource = s3resource("msg_outbox"),
+                               message = "Message Sent",
+                               format = "html",
+                               )
+
+        mailform = crud_form(request = request,
+                             resource = s3resource("msg_email"),
                              message = "Message Sent",
-                             format = "html")
-
-        mailform = sqlform(request = request,
-                           resource = s3resource("msg_email"),
-                           message = "Message Sent",
-                           format = "html")
+                             format = "html",
+                             )
 
         # Shortcuts
         lcustom = logform.custom

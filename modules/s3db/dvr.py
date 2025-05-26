@@ -39,7 +39,6 @@ __all__ = ("DVRCaseModel",
            "DVRReferralModel",
            "DVRResponseModel",
            "DVRVulnerabilityModel",
-           "DVRDiagnosisModel",
            "DVRServiceContactModel",
            "dvr_CaseActivityRepresent",
            "dvr_DocEntityRepresent",
@@ -1323,7 +1322,7 @@ class DVRTaskModel(DataModel):
                            represent = status_represent,
                            ),
                      self.hrm_human_resource_id(
-                         label = T("Staff"),
+                         label = T("Contact Person for Inquiries"),
                          ),
                      DateField("due_date",
                                label = T("Date Due"),
@@ -2197,42 +2196,42 @@ class DVRResponseModel(DataModel):
                 if response_themes_efforts:
                     fields.append("hours")
                     postprocess = self.response_action_postprocess
-                themes_field = S3SQLInlineComponent("response_action_theme",
-                                                    fields = fields,
-                                                    label = T("Themes"),
-                                                    )
+                themes_field = InlineComponent("response_action_theme",
+                                               fields = fields,
+                                               label = T("Themes"),
+                                               )
             else:
                 themes_field = "response_theme_ids"
         else:
             themes_field = None
 
         if settings.get_dvr_response_vulnerabilities():
-            vulnerabilities = S3SQLInlineLink("vulnerability",
-                                              field = "vulnerability_id",
-                                              header = False,
-                                              label = T("Vulnerabilities"),
-                                              comment = T("Vulnerabilities addressed by this action"),
-                                              )
+            vulnerabilities = InlineLink("vulnerability",
+                                         field = "vulnerability_id",
+                                         header = False,
+                                         label = T("Vulnerabilities"),
+                                         comment = T("Vulnerabilities addressed by this action"),
+                                         )
         else:
             vulnerabilities = None
 
         due_field = "date_due" if use_due_date else None
 
-        crud_form = S3SQLCustomForm("person_id",
-                                    "case_activity_id",
-                                    type_field,
-                                    themes_field,
-                                    details_field,
-                                    vulnerabilities,
-                                    "human_resource_id",
-                                    # TODO investigate if anything uses due_date
-                                    #      => make custom-only otherwise
-                                    due_field,
-                                    "start_date",
-                                    "status_id",
-                                    "hours",
-                                    postprocess = postprocess,
-                                    )
+        crud_form = CustomForm("person_id",
+                               "case_activity_id",
+                               type_field,
+                               themes_field,
+                               details_field,
+                               vulnerabilities,
+                               "human_resource_id",
+                               # TODO investigate if anything uses due_date
+                               #      => make custom-only otherwise
+                               due_field,
+                               "start_date",
+                               "status_id",
+                               "hours",
+                               postprocess = postprocess,
+                               )
 
         # Table Configuration
         configure(tablename,
@@ -3263,18 +3262,6 @@ class DVRCaseActivityModel(DataModel):
                             dvr_response_action = "case_activity_id",
                             dvr_response_action_theme = "case_activity_id",
                             dvr_case_activity_update = "case_activity_id",
-                            dvr_diagnosis = (
-                                    {"name": "suspected_diagnosis",
-                                     "link": "dvr_diagnosis_suspected",
-                                     "joinby": "case_activity_id",
-                                     "key": "diagnosis_id",
-                                     },
-                                    {"name": "confirmed_diagnosis",
-                                     "link": "dvr_diagnosis_confirmed",
-                                     "joinby": "case_activity_id",
-                                     "key": "diagnosis_id",
-                                     },
-                                    ),
                             dvr_vulnerability = {"link": "dvr_vulnerability_case_activity",
                                                  "joinby": "case_activity_id",
                                                  "key": "vulnerability_id",
@@ -5073,15 +5060,15 @@ class DVRVulnerabilityModel(DataModel):
                             )
 
         # CRUD form with embedded sector link
-        crud_form = S3SQLCustomForm("name",
-                                    "code",
-                                    S3SQLInlineLink("sector",
-                                                    field = "sector_id",
-                                                    label = T("Sectors"),
-                                                    ),
-                                    "obsolete",
-                                    "comments",
-                                    )
+        crud_form = CustomForm("name",
+                               "code",
+                               InlineLink("sector",
+                                          field = "sector_id",
+                                          label = T("Sectors"),
+                                          ),
+                               "obsolete",
+                               "comments",
+                               )
 
         # List fields to include sectors
         list_fields = ["name",
@@ -5296,101 +5283,6 @@ class DVRVulnerabilityModel(DataModel):
                 form.errors.vulnerability_type_id = error
 
 # =============================================================================
-class DVRDiagnosisModel(DataModel):
-    """ Diagnoses, e.g. in Psychosocial Support """
-
-    names = ("dvr_diagnosis",
-             "dvr_diagnosis_suspected",
-             "dvr_diagnosis_confirmed",
-             )
-
-    def model(self):
-
-        T = current.T
-
-        db = current.db
-        s3 = current.response.s3
-
-        define_table = self.define_table
-        crud_strings = s3.crud_strings
-
-        # ---------------------------------------------------------------------
-        # Diagnoses
-        #
-        tablename = "dvr_diagnosis"
-        define_table(tablename,
-                     Field("name",
-                           label = T("Diagnosis"),
-                           requires = [IS_NOT_EMPTY(), IS_LENGTH(512, minsize=1)],
-                           ),
-                     CommentsField(),
-                     )
-
-        # Table configuration
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(),
-                       )
-
-        # CRUD Strings
-        crud_strings[tablename] = Storage(
-            label_create = T("Create Diagnosis"),
-            title_display = T("Diagnosis Details"),
-            title_list = T("Diagnoses"),
-            title_update = T("Edit Diagnosis"),
-            label_list_button = T("List Diagnoses"),
-            label_delete_button = T("Delete Diagnosis"),
-            msg_record_created = T("Diagnosis created"),
-            msg_record_modified = T("Diagnosis updated"),
-            msg_record_deleted = T("Diagnosis deleted"),
-            msg_list_empty = T("No Diagnoses currently defined"),
-        )
-
-        # Foreign Key Template
-        represent = S3Represent(lookup=tablename, translate=True)
-        diagnosis_id = FieldTemplate("diagnosis_id",
-                                     "reference %s" % tablename,
-                                     label = T("Diagnosis"),
-                                     represent = represent,
-                                     requires = IS_EMPTY_OR(
-                                                 IS_ONE_OF(db, "%s.id" % tablename,
-                                                           represent,
-                                                           )),
-                                     sortby = "name",
-                                     )
-
-        # ---------------------------------------------------------------------
-        # Link tables for diagnosis <=> case activity (suspected and confirmed)
-        #
-        tablename = "dvr_diagnosis_suspected"
-        define_table(tablename,
-                     self.dvr_case_activity_id(
-                         empty = False,
-                         ondelete = "CASCADE",
-                         ),
-                     diagnosis_id(
-                         empty = False,
-                         ondelete = "RESTRICT",
-                         ),
-                     )
-
-        tablename = "dvr_diagnosis_confirmed"
-        define_table(tablename,
-                     self.dvr_case_activity_id(
-                         empty = False,
-                         ondelete = "CASCADE",
-                         ),
-                     diagnosis_id(
-                         empty = False,
-                         ondelete = "RESTRICT",
-                         ),
-                     )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
 class DVRServiceContactModel(DataModel):
     """ Model to track external service contacts of beneficiaries """
 
@@ -5549,6 +5441,7 @@ def dvr_get_case(person_id, archived=None):
         query &= (ctable.archived == archived)
     rows = db(query).select(ctable.id,
                             ctable.organisation_id,
+                            ctable.reference,
                             stable.is_closed,
                             left = left,
                             orderby = ~ctable.date,
@@ -5758,16 +5651,27 @@ def dvr_configure_case_tasks(r, categories=False, default_category=None):
 
     table = resource.table
 
-    # Limit HR selection to relevant organisation
     if organisation_id:
+        field = table.human_resource_id
+
+        # Limit contact person selection to case organisation
         htable = s3db.hrm_human_resource
         dbset = db((htable.organisation_id==organisation_id) & \
                    (htable.status == 1))
-        field = table.human_resource_id
         field.requires = IS_EMPTY_OR(IS_ONE_OF(dbset,
                                                "hrm_human_resource.id",
                                                field.represent,
                                                ))
+
+        # Default contact person to current user, if they are
+        # staff member of the case organisation
+        query = (htable.person_id == current.auth.s3_logged_in_person()) & \
+                (htable.organisation_id == organisation_id) & \
+                (htable.status == 1) & \
+                (htable.deleted == False)
+        row = db(query).select(htable.id, limitby=(0, 1)).first()
+        if row:
+            field.default = row.id
 
     # Hide person_id from form (shown in rheader instead), show as link to ToDo-tab
     field = table.person_id
@@ -5897,9 +5801,8 @@ def dvr_case_activity_form(r):
             r: the CRUDRequest
 
         Returns:
-            S3SQLCustomForm
+            CustomForm
     """
-    # TODO call this from case activity controller
 
     T = current.T
     s3db = current.s3db
@@ -5920,12 +5823,12 @@ def dvr_case_activity_form(r):
             "need_details",
             ]
     if settings.get_dvr_case_activity_vulnerabilities():
-        need.append(S3SQLInlineLink("vulnerability",
-                                    field = "vulnerability_id",
-                                    header = False,
-                                    label = T("Vulnerabilities"),
-                                    comment = T("Vulnerabilities relevant for this need"),
-                                    ))
+        need.append(InlineLink("vulnerability",
+                               field = "vulnerability_id",
+                               header = False,
+                               label = T("Vulnerabilities"),
+                               comment = T("Vulnerabilities relevant for this need"),
+                               ))
     need.append("start_date")
 
     # Action details
@@ -5947,16 +5850,16 @@ def dvr_case_activity_form(r):
         field.default = current.auth.s3_logged_in_human_resource()
 
         # Configure inline sub-form
-        actions.append(S3SQLInlineComponent("case_activity_update",
-                                            label = T("Progress"),
-                                            fields = ["date",
-                                                      (T("Occasion"), "update_type_id"),
-                                                      "human_resource_id",
-                                                      "comments",
-                                                      ],
-                                            layout = S3SQLVerticalSubFormLayout,
-                                            explicit_add = T("Add Entry"),
-                                            ))
+        actions.append(InlineComponent("case_activity_update",
+                                       label = T("Progress"),
+                                       fields = ["date",
+                                                 (T("Occasion"), "update_type_id"),
+                                                 "human_resource_id",
+                                                 "comments",
+                                                 ],
+                                       layout = SubFormLayoutVertical,
+                                       explicit_add = T("Add Entry"),
+                                       ))
 
     # Follow-up
     followup = ["followup", "followup_date"]
@@ -5975,15 +5878,15 @@ def dvr_case_activity_form(r):
 
     # Inline documents
     if settings.get_dvr_case_activity_documents():
-        documents = [S3SQLInlineComponent("document",
-                                          name = "file",
-                                          label = T("Attachments"),
-                                          fields = ["file", "comments"],
-                                          filterby = {"field": "file",
-                                                      "options": "",
-                                                      "invert": True,
-                                                      },
-                                          ),
+        documents = [InlineComponent("document",
+                                     name = "file",
+                                     label = T("Attachments"),
+                                     fields = ["file", "comments"],
+                                     filterby = {"field": "file",
+                                                 "options": "",
+                                                 "invert": True,
+                                                 },
+                                     ),
                       ]
     else:
         documents = []
@@ -5993,7 +5896,7 @@ def dvr_case_activity_form(r):
     if settings.get_dvr_case_activity_comments():
         crud_fields.append("comments")
 
-    return S3SQLCustomForm(*crud_fields)
+    return CustomForm(*crud_fields)
 
 # =============================================================================
 def dvr_response_status_colors(resource, selector):
@@ -6160,7 +6063,7 @@ def dvr_configure_inline_responses(r):
         Args:
             r: the CRUDRequest
         Returns:
-            S3SQLInlineComponent
+            InlineComponent
     """
 
     T = current.T
@@ -6199,7 +6102,7 @@ def dvr_configure_inline_responses(r):
                                                ))
 
         # Expose response_action_theme inline
-        inline_responses = S3SQLInlineComponent(
+        inline_responses = InlineComponent(
                                 "response_action_theme",
                                 fields = ["action_id",
                                           "theme_id",
@@ -6230,11 +6133,11 @@ def dvr_configure_inline_responses(r):
         if settings.get_dvr_response_types():
             response_action_fields.insert(1, "response_type_id")
 
-        inline_responses = S3SQLInlineComponent(
+        inline_responses = InlineComponent(
                                 "response_action",
                                 fields = response_action_fields,
                                 label = T("Actions"),
-                                layout = S3SQLVerticalSubFormLayout,
+                                layout = SubFormLayoutVertical,
                                 explicit_add = T("Add Action"),
                                 )
     return inline_responses
@@ -8037,6 +7940,8 @@ class DVRManageAllowance(CRUDMethod):
         permitted = self._permitted("update")
         if not permitted:
             r.unauthorised()
+
+        output = None
 
         if r.representation in ("html", "iframe"):
             if r.http in ("GET", "POST"):
@@ -10237,7 +10142,7 @@ def dvr_rheader(r, tabs=None):
 
     tablename, record = s3_rheader_resource(r)
     if tablename != r.tablename:
-        resource = current.s3db.resource(tablename, id=record.id)
+        resource = current.s3db.resource(tablename, id=record.id if record else None)
     else:
         resource = r.resource
 

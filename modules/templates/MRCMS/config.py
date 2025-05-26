@@ -129,12 +129,13 @@ def config(settings):
     # Defaults for custom settings
     #
     settings.custom.autogenerate_case_ids = True
+    settings.custom.manage_work_orders = True
 
-    settings.custom.context_org_name = "Eden ASP"
+    settings.custom.context_org_name = "Sahana Eden"
 
-    settings.custom.org_menu_logo = ("MRCMS", "img", "eden_asp_small.png")
-    settings.custom.homepage_logo = ("MRCMS", "img", "eden_asp_large.png")
-    settings.custom.idcard_default_logo = ("MRCMS", "img", "eden_asp_small.png")
+    settings.custom.org_menu_logo = ("MRCMS", "img", "eden_small.png")
+    settings.custom.homepage_logo = ("MRCMS", "img", "eden_large.png")
+    settings.custom.idcard_default_logo = ("MRCMS", "img", "eden_small.png")
 
     # -------------------------------------------------------------------------
     # General UI settings
@@ -158,6 +159,7 @@ def config(settings):
                                       "CASE_MANAGER": "ORG_ADMIN",
                                       "SECURITY": "ORG_ADMIN",
                                       "CATERING": "ORG_ADMIN",
+                                      "ISSUE_REPORTER": "ORG_ADMIN",
                                       "SHELTER_ADMIN": ("ORG_GROUP_ADMIN", "SHELTER_ADMIN"),
                                       "SHELTER_MANAGER": ("ORG_GROUP_ADMIN", "SHELTER_ADMIN"),
                                       "SUPPLY_ADMIN": ("ORG_GROUP_ADMIN", "SUPPLY_ADMIN"),
@@ -177,11 +179,17 @@ def config(settings):
     # ACT Settings and Customizations
     from .customise.act import act_activity_resource, \
                                act_activity_controller, \
-                               act_beneficiary_resource
+                               act_beneficiary_resource, \
+                               act_issue_controller, \
+                               act_task_controller
 
     settings.customise_act_activity_resource = act_activity_resource
     settings.customise_act_activity_controller = act_activity_controller
     settings.customise_act_beneficiary_resource = act_beneficiary_resource
+    settings.customise_act_issue_controller = act_issue_controller
+    settings.customise_act_task_controller = act_task_controller
+
+    settings.act.issue_site_type = "cr_shelter"
 
     # -------------------------------------------------------------------------
     # CMS Settings and Customizations
@@ -380,6 +388,7 @@ def config(settings):
 
     from .customise.dvr import dvr_home, \
                                dvr_case_resource, \
+                               dvr_need_resource, \
                                dvr_case_activity_resource, \
                                dvr_case_activity_controller, \
                                dvr_response_action_resource, \
@@ -398,6 +407,7 @@ def config(settings):
 
     settings.customise_dvr_home = dvr_home
     settings.customise_dvr_case_resource = dvr_case_resource
+    settings.customise_dvr_need_resource = dvr_need_resource
     settings.customise_dvr_case_activity_resource = dvr_case_activity_resource
     settings.customise_dvr_case_activity_controller = dvr_case_activity_controller
     settings.customise_dvr_response_action_resource = dvr_response_action_resource
