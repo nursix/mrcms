@@ -4525,7 +4525,37 @@ class S3Config(Storage):
         """
             Terminology to use for treatment areas (room|area)
         """
-        return self.med.get("area_label", "room")
+        return self.med.get("area_label", "area")
+
+    def get_med_area_over_capacity(self):
+        """
+            How to handle area assignments of patients when the
+            area is occupied over capacity:
+                "accept" - accept assignment
+                "warn" - accept assignment with a warning
+                "refuse" - refuse assignment
+        """
+        return self.med.get("area_over_capacity", "warn")
+
+    def get_med_risk_class_calculation(self):
+        """
+            Which vital sign risk stratifier to use
+            - True to use default stratifier class (s3db.med.RiskClass)
+        """
+        return self.__lazy("med", "risk_class_calculation", default=True)
+
+    def get_med_use_pe_label(self):
+        """
+            Use the PE label to identify persons in MED module
+        """
+        return self.med.get("use_pe_label", True)
+
+    def get_med_restrict_person_search_to(self):
+        """
+            Modules which persons must be linked to when registering
+            new treatment occasions for them
+        """
+        return self.med.get("restrict_patients_to", ("dvr",))
 
     # -------------------------------------------------------------------------
     # Members
@@ -5043,6 +5073,16 @@ class S3Config(Storage):
         """
         return self.__lazy("pr", "name_format", default="%(first_name)s %(middle_name)s %(last_name)s")
 
+    def get_pr_name_fields(self):
+        """
+            Returns the relevant name fields, in order of the name format
+        """
+        from core import StringTemplateParser
+
+        NAMES = ("first_name", "middle_name", "last_name")
+        keys = StringTemplateParser.keys(self.get_pr_name_format())
+        return [fn for fn in keys if fn in NAMES]
+
     def get_pr_search_shows_hr_details(self):
         """
             Whether S3PersonAutocompleteWidget results show the details of their HR record
@@ -5093,7 +5133,7 @@ class S3Config(Storage):
                     }
 
         tabs = self.get_pr_contacts_tabs()
-        label = tabs.get(group) if type(tabs) is dict else None
+        label = tabs.get(group) if isinstance(tabs, dict) else None
 
         if label is None:
             # Use default label

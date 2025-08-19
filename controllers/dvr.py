@@ -27,7 +27,7 @@ def index_alt():
 # Beneficiaries
 #
 def person():
-    """ Persons: RESTful CRUD Controller """
+    """ Persons: CRUD Controller """
 
     def prep(r):
 
@@ -97,7 +97,6 @@ def person():
                 query &= (FS("dvr_case.status_id$is_closed") == False) | \
                          (FS("dvr_case.status_id$is_closed") == None)
                 status_opts = lambda: get_status_opts(closed=False)
-
 
             resource.add_filter(query)
         else:
@@ -380,7 +379,7 @@ def person():
 # -----------------------------------------------------------------------------
 def person_search():
     """
-        RESTful controller for autocomplete-searches
+        Controller for autocomplete-searches
     """
 
     def prep(r):
@@ -534,7 +533,7 @@ def document():
 # -----------------------------------------------------------------------------
 def group_membership():
     """
-        RESTful CRUD controller for person<=>group links, normally called
+        CRUD Controller for person<=>group links, normally called
         only from component tab in person perspective (e.g. family members)
     """
 
@@ -633,7 +632,7 @@ def group_membership():
 # Cases
 #
 def case():
-    """ Cases: RESTful CRUD Controller """
+    """ Cases: CRUD Controller """
 
     s3db.dvr_case_default_status()
 
@@ -641,7 +640,7 @@ def case():
 
 # -----------------------------------------------------------------------------
 def case_flag():
-    """ Case Flags: RESTful CRUD Controller """
+    """ Case Flags: CRUD Controller """
 
     def prep(r):
         if settings.get_dvr_case_event_types_org_specific():
@@ -654,7 +653,7 @@ def case_flag():
 
 # -----------------------------------------------------------------------------
 def case_status():
-    """ Case Statuses: RESTful CRUD Controller """
+    """ Case Statuses: CRUD Controller """
 
     return crud_controller()
 
@@ -662,7 +661,7 @@ def case_status():
 # Case Activities
 #
 def case_activity():
-    """ Case Activities: RESTful CRUD Controller """
+    """ Case Activities: CRUD Controller """
 
     def prep(r):
 
@@ -733,7 +732,7 @@ def case_activity():
 
 # -----------------------------------------------------------------------------
 def due_followups():
-    """ Case Activities to follow up: RESTful CRUD Controller """
+    """ Case Activities to follow up: CRUD Controller """
 
     def prep(r):
 
@@ -800,13 +799,13 @@ def due_followups():
 
 # -----------------------------------------------------------------------------
 def provider_type():
-    """ Provider Types for Case Activities: RESTful CRUD Controller """
+    """ Provider Types for Case Activities: CRUD Controller """
 
     return crud_controller()
 
 # -----------------------------------------------------------------------------
 def referral_type():
-    """ Referral Types: RESTful CRUD Controller """
+    """ Referral Types: CRUD Controller """
 
     return crud_controller()
 
@@ -814,13 +813,13 @@ def referral_type():
 # Responses
 #
 def response_theme():
-    """ Response Themes: RESTful CRUD Controller """
+    """ Response Themes: CRUD Controller """
 
     return crud_controller()
 
 # -----------------------------------------------------------------------------
 def response_type():
-    """ Response Types: RESTful CRUD Controller """
+    """ Response Types: CRUD Controller """
 
     def prep(r):
         field = r.table.parent
@@ -834,13 +833,13 @@ def response_type():
 
 # -----------------------------------------------------------------------------
 def response_status():
-    """ Response Statuses: RESTful CRUD Controller """
+    """ Response Statuses: CRUD Controller """
 
     return crud_controller()
 
 # -----------------------------------------------------------------------------
 def response_action():
-    """ Response Actions: RESTful CRUD controller """
+    """ Response Actions: CRUD Controller """
 
     def prep(r):
 
@@ -940,7 +939,7 @@ def response_action():
 
 # -----------------------------------------------------------------------------
 def termination_type():
-    """ Termination Types: RESTful CRUD Controller """
+    """ Termination Types: CRUD Controller """
 
     def prep(r):
 
@@ -963,13 +962,13 @@ def termination_type():
 
 # -----------------------------------------------------------------------------
 def case_activity_update_type():
-    """ Case Activity Update Types: RESTful CRUD Controller """
+    """ Case Activity Update Types: CRUD Controller """
 
     return crud_controller()
 
 # -----------------------------------------------------------------------------
 def case_activity_status():
-    """ Case Activity Statuses: RESTful CRUD Controller """
+    """ Case Activity Statuses: CRUD Controller """
 
     return crud_controller()
 
@@ -977,7 +976,7 @@ def case_activity_status():
 # Allowance
 #
 def allowance():
-    """ Allowances: RESTful CRUD Controller """
+    """ Allowances: CRUD Controller """
 
     deduplicate = s3db.get_config("pr_person", "deduplicate")
 
@@ -1055,10 +1054,23 @@ def allowance():
                            )
 
 # =============================================================================
+# Grants
+#
+def grant_type():
+    """ Beneficiary Grant Types: CRUD Controller """
+
+    return crud_controller(rheader=s3db.dvr_rheader)
+
+def grant():
+    """ Beneficiary Grants: CRUD Controller """
+
+    return crud_controller()
+
+# =============================================================================
 # Appointments
 #
 def case_appointment():
-    """ Appointments: RESTful CRUD Controller """
+    """ Appointments: CRUD Controller """
 
     def prep(r):
 
@@ -1098,7 +1110,7 @@ def case_appointment():
 
 # -----------------------------------------------------------------------------
 def case_appointment_type():
-    """ Appointment Type: RESTful CRUD Controller """
+    """ Appointment Type: CRUD Controller """
 
     def prep(r):
         if settings.get_dvr_case_event_types_org_specific():
@@ -1113,7 +1125,7 @@ def case_appointment_type():
 # Case Events
 #
 def case_event():
-    """ Case Event Types: RESTful CRUD Controller """
+    """ Case Event Types: CRUD Controller """
 
     def prep(r):
         if not r.component:
@@ -1133,7 +1145,7 @@ def case_event():
 
 # -----------------------------------------------------------------------------
 def case_event_type():
-    """ Case Event Types: RESTful CRUD Controller """
+    """ Case Event Types: CRUD Controller """
 
     def prep(r):
         if settings.get_dvr_case_event_types_org_specific():
@@ -1164,7 +1176,7 @@ def vulnerability_type():
 # Notes
 #
 def note():
-    """ Notes: RESTful CRUD Controller """
+    """ Notes: CRUD Controller """
 
     # Coming from a Profile page?"
     person_id = get_vars.get("~.person_id")
@@ -1176,7 +1188,7 @@ def note():
     return crud_controller()
 
 def note_type():
-    """ Note Types: RESTful CRUD Controller """
+    """ Note Types: CRUD Controller """
 
     return crud_controller()
 
@@ -1184,7 +1196,7 @@ def note_type():
 # Case Tasks
 #
 def task():
-    """ Case Tasks: CRUD controller """
+    """ Case Tasks: CRUD Controller """
 
     settings.base.bigtable = True
 
@@ -1205,13 +1217,13 @@ def task():
 # Residence Status
 #
 def residence_status_type():
-    """ Residence Status Types: RESTful CRUD controller """
+    """ Residence Status Types: CRUD Controller """
 
     return crud_controller()
 
 # -----------------------------------------------------------------------------
 def residence_permit_type():
-    """ Residence Permit Types: RESTful CRUD controller """
+    """ Residence Permit Types: CRUD Controller """
 
     return crud_controller()
 
@@ -1219,7 +1231,7 @@ def residence_permit_type():
 # Service Contacts
 #
 def service_contact_type():
-    """ Service Contact Types: RESTful CRUD controller """
+    """ Service Contact Types: CRUD Controller """
 
     return crud_controller()
 

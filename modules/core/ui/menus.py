@@ -300,14 +300,12 @@ class OptionsMenu:
         # NB: Do not specify a controller for the main menu to allow
         #     re-use of this menu by other controllers
         return M()(
-                    M("User Management", c="admin", f="user")(
-                        M("Create User", m="create"),
-                        M("List All Users"),
-                        M("Import Users", m="import"),
-                        M("List All Roles", f="role"),
-                        M("List All Organization Approvers & Whitelists", f="organisation"),
-                        #M("Roles", f="group"),
-                        #M("Membership", f="membership"),
+                    M("Users and Roles", c="admin", link=False)(
+                        M("Manage Users", f="user"),
+                        M("Manage Roles", f="role"),
+                        # M("List All Organization Approvers & Whitelists", f="organisation"),
+                        # M("Roles", f="group"),
+                        # M("Membership", f="membership"),
                     ),
                     M("CMS", c="cms", f="post")(
                     ),
@@ -1148,15 +1146,16 @@ class OptionsMenu:
         ADMIN = current.session.s3.system_roles.ADMIN
 
         return M(c="med")(
-                    M("Patients", f="patient")(
+                    M("Current Patients", f="patient")(
                         M("Create", m="create"),
+                        M("Former Patients", f="patient", vars={"closed": "only"}),
                         ),
                     # M("Persons", f="person"),
                     M("Units", f="unit")(
                         M("Create", m="create"),
                         ),
                     M("Administration", link=False, restrict=[ADMIN])(
-                        M("Medicines", f="substance"),
+                        M("Active Substances", f="substance"),
                         M("Vaccination Types", f="vaccination_type"),
                         ),
                     )

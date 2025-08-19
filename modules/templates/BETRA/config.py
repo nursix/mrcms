@@ -299,13 +299,15 @@ def config(settings):
     #settings.dvr.payments_update_last_seen_on = True
 
     from .customise.dvr import dvr_task_resource, \
-                               dvr_note_resource
+                               dvr_note_resource, \
+                               dvr_case_activity_status_resource
                                #dvr_case_activity_resource
                                #dvr_note_type_resource
 
 
     settings.customise_dvr_note_resource = dvr_note_resource
     settings.customise_dvr_task_resource = dvr_task_resource
+    settings.customise_dvr_case_activity_status_resource = dvr_case_activity_status_resource
     #settings.customise_dvr_case_activity_resource = dvr_case_activity_resource
     #settings.customise_dvr_note_type_resource = dvr_note_type_resource
 
@@ -342,7 +344,10 @@ def config(settings):
     settings.pr.name_format= "%(last_name)s, %(first_name)s"
     settings.pr.generate_pe_label = True
 
-    from .customise.pr import pr_person_controller
+    from .customise.pr import pr_person_resource, \
+                              pr_person_controller
+
+    settings.customise_pr_person_resource = pr_person_resource
     settings.customise_pr_person_controller = pr_person_controller
 
     # -------------------------------------------------------------------------

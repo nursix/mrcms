@@ -265,12 +265,8 @@ def pr_person_resource(r, tablename):
     # record upon forced realm update
     s3db.configure("pr_person",
                    deletable = False,
-                   realm_components = ("address",
-                                       "case_activity",
-                                       "case_details",
-                                       "case_language",
-                                       "case_note",
-                                       "case_task",
+                   realm_components = (# PR --------------------
+                                       "address",
                                        "contact",
                                        "contact_emergency",
                                        "group_membership",
@@ -278,12 +274,27 @@ def pr_person_resource(r, tablename):
                                        "image",
                                        "person_details",
                                        "person_tag",
+                                       # DVR -------------------
+                                       "case_activity",
+                                       "case_details",
+                                       "case_language",
+                                       "case_note",
+                                       "case_task",
                                        "residence_status",
                                        "response_action",
                                        "service_contact",
+                                       "vulnerability",
+                                       # CR --------------------
                                        "shelter_registration",
                                        "shelter_registration_history",
-                                       "vulnerability",
+                                       # ACT -------------------
+                                       "beneficiary"
+                                       # MED -------------------
+                                       "anamnesis",
+                                       "medication",
+                                       "vaccination",
+                                       # SECURITY --------------
+                                       "seized_item",
                                        ),
                    )
 
@@ -677,9 +688,9 @@ def configure_case_filters(resource, organisation_id=None, privileged=False):
                           ),
             OptionsFilter("case_flag_case.flag_id",
                           label = T("Flags"),
-                          options = get_filter_options("dvr_case_flag",
-                                                       translate = True,
-                                                       ),
+                          options = lambda: get_filter_options("dvr_case_flag",
+                                                               translate = True,
+                                                               ),
                           cols = 3,
                           hidden = True,
                           ),
@@ -899,7 +910,11 @@ def configure_id_cards(r, resource, administration=False):
 # -------------------------------------------------------------------------
 def configure_dvr_person_controller(r, privileged=False, administration=False):
     """
-        Case File (Full)
+        Case File (Full), used in
+            - dvr/person
+            - counsel/person
+            - supply/person
+            - med/person (without viewing)
 
         Args:
             r: the CRUDRequest
@@ -912,6 +927,16 @@ def configure_dvr_person_controller(r, privileged=False, administration=False):
     settings = current.deployment_settings
 
     resource = r.resource
+
+    # Components that can be written to without permission
+    # to update the master record
+    s3db.configure("pr_person",
+                   ignore_master_access = ("anamnesis",
+                                           "medication",
+                                           "vaccination",
+                                           "case_appointment",
+                                           ),
+                   )
 
     # Autocomplete using alternative search method
     search_fields = ("first_name", "last_name", "pe_label")
@@ -1397,7 +1422,7 @@ def configure_custom_actions(r, output, is_case_admin=False, is_org_admin=False)
     component_name = r.component_name
 
     controller = r.controller
-    if controller in ("dvr", "counsel", "supply"):
+    if controller in ("dvr", "counsel", "med", "supply"):
 
         if not r.component:
 
@@ -1498,7 +1523,7 @@ def pr_person_controller(**attr):
 
     administration = is_org_admin or is_case_admin
 
-    PRIVILEGED = ("CASE_MANAGER", "CASE_ASSISTANT")
+    PRIVILEGED = ("CASE_MANAGER", "CASE_ASSISTANT", "MED_PRACTITIONER")
     privileged = administration or auth.s3_has_roles(PRIVILEGED)
 
     QUARTERMASTER = auth.s3_has_role("QUARTERMASTER") and not privileged
@@ -1506,7 +1531,7 @@ def pr_person_controller(**attr):
     # Add custom components
     # - must happen before prep, so selectors from filters do not
     #   get resolved as virtual fields prematurely
-    if current.request.controller in ("dvr", "counsel", "supply"):
+    if current.request.controller in ("dvr", "counsel", "supply", "med"):
         configure_person_tags()
 
     # Only one staff record per person
@@ -1524,27 +1549,39 @@ def pr_person_controller(**attr):
             # Enforce closed=0
             r.vars["closed"] = r.get_vars["closed"] = "0"
 
-        # Call standard prep
-        if r.controller in ("dvr", "counsel", "supply"):
+        controller = r.controller
+
+        # Is this a case file view?
+        case_file = controller in ("dvr", "counsel", "supply") or \
+                    controller == "med" and not r.viewing
+
+        if case_file:
+            # Call custom dvr/person prep
             from .dvr import dvr_person_prep
             result = dvr_person_prep(r)
         else:
+            # Call standard prep
             result = standard_prep(r) if callable(standard_prep) else True
 
         get_vars = r.get_vars
 
-        # Adjust list title for invalid cases (normally "Archived")
-        archived = get_vars.get("archived")
-        if archived in ("1", "true", "yes"):
-            crud_strings = s3.crud_strings["pr_person"]
-            crud_strings["title_list"] = T("Invalid Cases")
+        if case_file:
+            # Adjust list title for invalid cases (normally "Archived")
+            archived = get_vars.get("archived")
+            if archived in ("1", "true", "yes"):
+                crud_strings = s3.crud_strings["pr_person"]
+                crud_strings["title_list"] = T("Invalid Cases")
 
-        controller = r.controller
-        if controller in ("dvr", "counsel", "supply"):
+            # Configure case perspective
             configure_dvr_person_controller(r,
                                             privileged = privileged,
                                             administration = administration,
                                             )
+
+        # TODO person-tab of patient file
+        #elif controller == "med":
+        #    configure_med_person_controller(r)
+
         elif controller == "security":
             configure_security_person_controller(r)
 
@@ -1606,8 +1643,10 @@ def pr_person_controller(**attr):
     s3.postp = postp
 
     # Custom rheader tabs
+    controller = current.request.controller
     from ..rheaders import dvr_rheader, hrm_rheader, default_rheader
-    if current.request.controller in ("dvr", "counsel", "supply"):
+    if controller in ("dvr", "counsel", "supply") or \
+       controller == "med" and not current.request.get_vars.get("viewing"):
 
         attr["rheader"] = dvr_rheader
         attr["variable_columns"] = True
@@ -1618,16 +1657,19 @@ def pr_person_controller(**attr):
                                      "field": managed_orgs_field,
                                      }]
 
-    elif current.request.controller == "hrm":
-        attr["rheader"] = hrm_rheader
-    elif current.request.controller == "default":
-        attr["rheader"] = default_rheader
+        # Activate filters on component tabs
+        attr["hide_filter"] = {"response_action": False,
+                               "distribution_item": False,
+                               "case_task": False,
+                               }
 
-    # Activate filters on component tabs
-    attr["hide_filter"] = {"response_action": False,
-                           "distribution_item": False,
-                           "case_task": False,
-                           }
+    # TODO person-tab of patient file
+    #elif controller == "med":
+    #    attr["rheader"] = med_rheader
+    elif controller == "hrm":
+        attr["rheader"] = hrm_rheader
+    elif controller == "default":
+        attr["rheader"] = default_rheader
 
     return attr
 

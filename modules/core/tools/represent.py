@@ -48,6 +48,7 @@ __all__ = ("BooleanRepresent",
            "represent_image",
            "represent_option",
            "represent_hours",
+           "represent_normal",
            "represent_occupancy",
            )
 
@@ -62,7 +63,7 @@ from gluon.storage import Storage
 from gluon.languages import lazyT
 
 from .convert import s3_str
-from .utils import MarkupStripper
+from .utils import MarkupStripper, luminance
 
 URLSCHEMA = re.compile(r"((?:(())(www\.([^/?#\s]*))|((http(s)?|ftp):)"
                        r"(//([^/?#\s]*)))([^?#\s]*)(\?([^#\s]*))?(#([^\s]*))?)")
@@ -87,7 +88,7 @@ class S3Represent:
     """
 
     def __init__(self,
-                 lookup = None,
+                 lookup = None, *,
                  key = None,
                  fields = None,
                  labels = None,
@@ -99,6 +100,7 @@ class S3Represent:
                  hierarchy = False,
                  default = None,
                  none = None,
+                 color = None,
                  field_sep = " "
                  ):
         """
@@ -121,6 +123,8 @@ class S3Represent:
                 show_link: whether to add a URL to representations
                 default: default representation for unknown options
                 none: representation for empty fields (None or empty list)
+                color: field for color-code in lookup table, activates
+                       color-coded representation
                 field_sep: separator to use to join fields
         """
 
@@ -137,6 +141,7 @@ class S3Represent:
         self.show_link = show_link
         self.default = default
         self.none = none
+        self.color = color
         self.field_sep = field_sep
         self.setup = False
         self.theset = None
@@ -172,6 +177,11 @@ class S3Represent:
         if fields is None:
             fields = []
         fields.append(key)
+
+        table = self.table
+        color = self.color
+        if table and color and color in table.fields:
+            fields.append(table[color])
 
         if len(values) == 1:
             query = (key == values[0])
@@ -242,6 +252,15 @@ class S3Represent:
             output = t_(v)
         else:
             output = v
+
+        # Color-coded representation
+        color = self.color
+        if color and color in row and row[color] is not None:
+            bg = row[color]
+            # Choose contrasting text color
+            fg = "fefefe" if luminance(bg) < 140 else "444"
+            style = "background-color:#%s;color:#%s" % (bg, fg)
+            output = DIV(output, _class="prio", _style=style)
 
         return output
 
@@ -556,7 +575,6 @@ class S3Represent:
                        parent not in lookup:
                         lookup[parent] = False
                         lookup_parent(parent)
-                    return
                 for node_id in list(lookup.keys()):
                     lookup_parent(node_id)
             else:
@@ -768,7 +786,6 @@ class S3RepresentLazy:
                 element.text = text
             else:
                 attributes[name] = text
-            return
 
 # =============================================================================
 class S3PriorityRepresent:
@@ -1215,6 +1232,33 @@ def represent_hours(colon=False):
             title = " ".join(formatted) if formatted else None
 
         return SPAN("%s" % round(value, 2), _title=title, _class="hours-formatted")
+
+    return represent
+
+# -------------------------------------------------------------------------
+def represent_normal(minimum=None, maximum=None):
+    """
+        Representation of a numerical value with highlighting values
+        outside of a given range
+
+        Args:
+            minimum: the lower end of the normal range
+            maximum: the upper end of the normal range
+
+        Returns:
+            SPAN, with CSS class "out-of-range" for abnormal values
+    """
+
+    def represent(value, row=None):
+
+        if value is None:
+            output = "-"
+        elif (minimum is None or minimum <= value) and \
+             (maximum is None or value <= maximum):
+            output = SPAN(value)
+        else:
+            output = SPAN(value, _class="out-of-range")
+        return output
 
     return represent
 

@@ -75,6 +75,12 @@ class MainMenu(default.MainMenu):
         else:
             shelter_menu = MM("Shelters", c="cr", f="shelter")
 
+        # Med-menu
+        if has_permission("read", "med_patient", c="med", f="patient"):
+            med_menu = MM("Med-Point", c="med", f=("patient", "*"))
+        else:
+            med_menu = MM("Med-Point", c="med", f=("unit", "*"))
+
         menu = [
             MM("Clients", c=("dvr", "pr"), f=("person", "*")),
             MM("Food Distribution", c="dvr", f="case_event", m="register_food", p="create",
@@ -83,6 +89,7 @@ class MainMenu(default.MainMenu):
                ),
             MM("Counseling", c=("counsel", "pr"), f=("person", "*")),
             MM("Supply", c=("supply", "pr"), f=("person", "*")),
+            med_menu,
             shelter_menu,
             org_menu,
             MM("Security", c="security", f="seized_item"),
@@ -385,6 +392,28 @@ class OptionsMenu(default.OptionsMenu):
                     M("Service Contact Types", f="service_contact_type", restrict=ADMIN),
                     ),
                 )
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def med():
+        """ Medical Journal """
+
+        ADMIN = current.session.s3.system_roles.ADMIN
+
+        return M(c="med")(
+                    M("Current Patients", f="patient")(
+                        M("Create", m="create"),
+                        M("Former Patients", f="patient", vars={"closed": "only"}),
+                        ),
+                    # M("Persons", f="person"),
+                    M("Units", f="unit")(
+                        M("Create", m="create"),
+                        ),
+                    M("Administration", link=False, restrict=[ADMIN])(
+                        M("Active Substances", f="substance"),
+                        M("Vaccination Types", f="vaccination_type"),
+                        ),
+                    )
 
     # -------------------------------------------------------------------------
     @staticmethod

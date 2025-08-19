@@ -40,6 +40,8 @@ __all__ = ("DVRCaseModel",
            "DVRResponseModel",
            "DVRVulnerabilityModel",
            "DVRServiceContactModel",
+           "DVRGrantModel",
+
            "dvr_CaseActivityRepresent",
            "dvr_DocEntityRepresent",
            "dvr_ResponseActionThemeRepresent",
@@ -537,6 +539,13 @@ class DVRCaseModel(DataModel):
         # ---------------------------------------------------------------------
         # Case Details: extended attributes for DVR cases
         #
+        # Terms and Conditions document signed or not?
+        tc_options = WorkflowOptions(("Y", "Signed", "green"),
+                                     ("N", "Not Signed", "red"),
+                                     ("N/A", "not applicable", "grey"),
+                                     none = "N",
+                                     )
+
         tablename = "dvr_case_details"
         define_table(tablename,
                      case_id(empty = False,
@@ -554,6 +563,14 @@ class DVRCaseModel(DataModel):
                            default = False,
                            label = T("Enrolled in Public School"),
                            represent = s3_yes_no_represent,
+                           ),
+                     Field("tc_signed",
+                           label = T("Terms and Conditions accepted?"),
+                           default = None,
+                           requires = IS_IN_SET(tc_options.selectable(True),
+                                                sort = False,
+                                                ),
+                           represent = tc_options.represent,
                            ),
                      DateField("arrival_date",
                                label = T("Arrival Date"),
@@ -1114,7 +1131,7 @@ class DVRCaseFlagDistributionModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
 # =============================================================================
 class DVRNeedsModel(DataModel):
@@ -1650,7 +1667,7 @@ class DVRNotesModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return {}
 
 # =============================================================================
 class DVRReferralModel(DataModel):
@@ -3004,6 +3021,13 @@ class DVRCaseActivityModel(DataModel):
                            label = T("Workflow Position"),
                            requires = IS_INT_IN_RANGE(0, None),
                            ),
+                     Field("color",
+                           requires = IS_EMPTY_OR(IS_HTML_COLOUR()),
+                           represent = IS_HTML_COLOUR.represent,
+                           widget = S3ColorPickerWidget(),
+                           readable = False,
+                           writable = False,
+                           ),
                      Field("is_default", "boolean",
                            default = False,
                            label = T("Default Status"),
@@ -3036,7 +3060,7 @@ class DVRCaseActivityModel(DataModel):
         )
 
         # Foreign Key Template
-        represent = S3Represent(lookup=tablename, translate=True)
+        represent = S3Represent(lookup=tablename, translate=True, color="color")
         activity_status_id = FieldTemplate("status_id",
                                            "reference %s" % tablename,
                                            label = T("Status"),
@@ -3295,28 +3319,24 @@ class DVRCaseActivityModel(DataModel):
                                       ],
                                      label = T("Search"),
                                      ),
-                          # TODO make optional by setting
-                          OptionsFilter("emergency",
-                                        options = {True: T("Yes"),
-                                                   False: T("No"),
-                                                   },
-                                        cols = 2,
-                                        ),
-                          # TODO make optional by setting
-                          OptionsFilter("need_id",
-                                        options = lambda: get_filter_options("dvr_need",
-                                                                             translate = True,
-                                                                             ),
-                                        ),
-                          # TODO replace by status filter
-                          #OptionsFilter("completed",
-                          #              default = False,
-                          #              options = {True: T("Yes"),
-                          #                         False: T("No"),
-                          #                         },
-                          #              cols = 2,
-                          #              ),
                           ]
+        if use_status:
+            filter_widgets.append(OptionsFilter("status_id", cols=3))
+        if use_emergency:
+            filter_widgets.append(OptionsFilter("emergency",
+                                                options = {True: T("Yes"),
+                                                           False: T("No"),
+                                                           },
+                                                cols = 2,
+                                                ))
+        if use_need:
+            filter_widgets.append(OptionsFilter("need_id",
+                                                options = lambda: get_filter_options("dvr_need",
+                                                                                     translate = True,
+                                                                                     ),
+                                                ))
+        if service_type:
+            filter_widgets.append(OptionsFilter("service_id"))
         if follow_up:
             filter_widgets.extend([OptionsFilter("followup",
                                                  label = T("Follow-up required"),
@@ -3331,9 +3351,6 @@ class DVRCaseActivityModel(DataModel):
                                               hidden = True,
                                               ),
                                    ])
-
-        if service_type:
-            filter_widgets.insert(3, OptionsFilter("service_id"))
 
         # Report options
         # TODO adjust after settings
@@ -4255,13 +4272,7 @@ class DVRResidenceStatusModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
-
-    # -------------------------------------------------------------------------
-    def defaults(self):
-        """ Safe defaults for names in case the module is disabled """
-
-        return None
+        # return {}
 
 # =============================================================================
 class DVRCaseAllowanceModel(DataModel):
@@ -4823,13 +4834,7 @@ class DVRCaseEventModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
-
-    # -------------------------------------------------------------------------
-    def defaults(self):
-        """ Safe defaults for names in case the module is disabled """
-
-        return None
+        # return {}
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -5038,7 +5043,7 @@ class DVRVulnerabilityModel(DataModel):
                                             ]),
                            ),
                      Field("obsolete", "boolean",
-                           label = T("obsolete"),
+                           label = T("Obsolete"),
                            default = False,
                            represent = BooleanRepresent(labels = False,
                                                         # Reverse icons semantics
@@ -5226,13 +5231,7 @@ class DVRVulnerabilityModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
-
-    # -------------------------------------------------------------------------
-    def defaults(self):
-        """ Safe defaults for names in case the module is disabled """
-
-        return None
+        # return {}
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -5406,13 +5405,464 @@ class DVRServiceContactModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return {}
+
+# =============================================================================
+class DVRGrantModel(DataModel):
+    """ Model for Beneficiary Grants """
+
+    names = ("dvr_grant_type",
+             "dvr_grant",
+             "dvr_grant_history",
+             )
+
+    def model(self):
+
+        T = current.T
+        db = current.db
+        s3 = current.response.s3
+
+        crud_strings = s3.crud_strings
+
+        amount_represent = lambda v, row=None: \
+                           IS_FLOAT_AMOUNT.represent(v, precision=2, fixed=False)
+
+        # ---------------------------------------------------------------------
+        # Grant Type
+        #
+        aid_types = {"CASH": T("Cash"),
+                     "SUPPLY": T("Supplies"),
+                     "WORK": T("Work"),
+                     "COUNSEL": T("Counsel"),
+                     "SHELTER": T("Shelter"),
+                     "OTHER": T("Other"),
+                     }
+
+        tablename = "dvr_grant_type"
+        self.define_table(tablename,
+                          Field("name", length=128, notnull=True, unique=True,
+                                label = T("Title"),
+                                requires = [IS_NOT_EMPTY(),
+                                            IS_LENGTH(128, minsize=1),
+                                            IS_NOT_ONE_OF(db, "%s.name" % tablename),
+                                            ],
+                                ),
+                          CommentsField("description",
+                                        label = T("Description"),
+                                        ),
+                          Field("granting_entity",
+                                label = T("Granting Entity"),
+                                ),
+                          Field("aid_type",
+                                label = T("Type of Aid"),
+                                default = "CASH",
+                                requires = IS_IN_SET(aid_types, zero=None),
+                                represent = represent_option(aid_types),
+                                ),
+                          Field("um", length=64,
+                                label = T("Unit of Measure"),
+                                requires = IS_LENGTH(64, minsize=1),
+                                represent = lambda v, row=None: v if v else "-"
+                                ),
+                          Field("relative", "boolean",
+                                label = T("Relative Amount"),
+                                default = True,
+                                represent = BooleanRepresent(flag=True),
+                                comment = T("Granted amounts are relative (e.g. percentage of costs)"),
+                                ),
+                          Field("total_beneficiaries", "integer",
+                                label = T("Total Beneficiaries"),
+                                default = 0,
+                                represent = lambda v, row=None: v if v is not None else "-",
+                                readable = False,
+                                writable = False,
+                                ),
+                          Field("total_amount_granted", "double",
+                                label = T("Total Amount Granted"),
+                                default = 0.0,
+                                represent = amount_represent,
+                                readable = False,
+                                writable = False,
+                                ),
+                          Field("total_amount_delivered", "double",
+                                label = T("Total Amount Delivered"),
+                                default = 0.0,
+                                represent = amount_represent,
+                                readable = False,
+                                writable = False,
+                                ),
+                          Field("obsolete", "boolean",
+                                label = T("Obsolete"),
+                                default = False,
+                                represent = BooleanRepresent(labels = False,
+                                                             # Reverse icons semantics
+                                                             icons = (BooleanRepresent.NEG,
+                                                                      BooleanRepresent.POS,
+                                                                      ),
+                                                             flag = True,
+                                                             ),
+                                ),
+                          CommentsField(),
+                          )
+
+        # Components
+        self.add_components(tablename,
+                            dvr_grant = "type_id",
+                            )
+
+        # CRUD strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Create Grant Type"),
+            title_display = T("Grant Type Details"),
+            title_list = T("Grant Types"),
+            title_update = T("Edit Grant Type"),
+            label_list_button = T("List Grant Types"),
+            label_delete_button = T("Delete Grant Type"),
+            msg_record_created = T("Grant Type added"),
+            msg_record_modified = T("Grant Type updated"),
+            msg_record_deleted = T("Grant Type deleted"),
+            msg_list_empty = T("No Grant Types currently registered"),
+            )
+
+        # Foreign key template
+        represent = S3Represent(lookup=tablename)
+        grant_type_id = FieldTemplate("type_id", "reference %s" % tablename,
+                                      label = T("Grant Type"),
+                                      ondelete = "CASCADE",
+                                      represent = represent,
+                                      requires = IS_EMPTY_OR(
+                                                    IS_ONE_OF(db, "%s.id" % tablename,
+                                                              represent,
+                                                              )),
+                                      )
+
+        # ---------------------------------------------------------------------
+        # Grant
+        # TODO expose in BETRA (tab or inline?)
+        #
+        grant_status = (("REQ", T("Requested")),
+                        ("APR", T("Approved")),
+                        ("RCV", T("Received")),
+                        ("DCL", T("Declined")),
+                        ("SSP", T("Suspended")),
+                        ("RSC", T("Rescinded")),
+                        )
+        status_represent = S3PriorityRepresent(grant_status,
+                                               {"REQ": "lightblue",
+                                                "APR": "lightgreen",
+                                                "RCV": "green",
+                                                "DCL": "red",
+                                                "SSP": "grey",
+                                                "RSC": "black",
+                                                }).represent
+        tablename = "dvr_grant"
+        self.define_table(tablename,
+                          DateField(
+                              label = T("Date"),
+                              default="now",
+                              empty = False,
+                              ),
+                          self.pr_person_id( # beneficiary
+                              empty = False,
+                              ondelete = "RESTRICT",
+                              comment = None,
+                              # TODO should not be updateable => prep
+                              # writable = False,
+                              ),
+                          Field("refno", length=128,
+                                label = T("Ref.No."),
+                                requires = IS_EMPTY_OR([
+                                                IS_LENGTH(128, minsize=1),
+                                                IS_NOT_ONE_OF(db, "%s.refno" % tablename,
+                                                              error_message = T("A grant with this reference number is already registered"),
+                                                              ),
+                                                ]),
+                                represent = lambda v, row=None: v if v else "-",
+                                ),
+                          grant_type_id(
+                              empty = False,
+                              ondelete = "RESTRICT",
+                              # TODO should not be updateable => prep
+                              # writable = False,
+                              ),
+                          Field("amount_granted", "double",
+                                label = T("Amount granted"),
+                                default = 0.0,
+                                requires = IS_FLOAT_AMOUNT(minimum=0.0),
+                                represent = amount_represent,
+                                ),
+                          Field("amount_received", "double",
+                                label = T("Amount received"),
+                                default = 0.0,
+                                requires = IS_FLOAT_AMOUNT(minimum=0.0),
+                                represent = amount_represent,
+                                ),
+                          Field("status", length=16,
+                                label = T("Status"),
+                                default = "APPROVED",
+                                requires = IS_IN_SET(grant_status,
+                                                     sort = False,
+                                                     zero = None,
+                                                     ),
+                                represent = status_represent,
+                                ),
+                          Field("vhash",
+                                readable = False,
+                                writable = False,
+                                ),
+                          CommentsField(),
+                          )
+
+        # Components
+        self.add_components(tablename,
+                            dvr_grant_history = {"name": "history",
+                                                 "joinby": "grant_id",
+                                                 },
+                            )
+
+        # Table configuration
+        self.configure(tablename,
+                       onvalidation = self.grant_onvalidation,
+                       onaccept = self.grant_onaccept,
+                       ondelete = self.grant_ondelete,
+                       )
+
+        # CRUD strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Register Grant"),
+            title_display = T("Grant Details"),
+            title_list = T("Grants"),
+            title_update = T("Edit Grant"),
+            label_list_button = T("List Grants"),
+            label_delete_button = T("Delete Grant"),
+            msg_record_created = T("Grant registered"),
+            msg_record_modified = T("Grant updated"),
+            msg_record_deleted = T("Grant deleted"),
+            msg_list_empty = T("No Grants currently registered"),
+            )
+
+        # ---------------------------------------------------------------------
+        # History trail of a grant
+        # - written automatically onaccept
+        #
+        tablename = "dvr_grant_history"
+        self.define_table(tablename,
+                          Field("grant_id", "reference dvr_grant",
+                                ondelete = "CASCADE",
+                                readable = False,
+                                writable = False,
+                                ),
+                          DateTimeField(
+                              label = T("Date"),
+                              writable = False,
+                              ),
+                          self.pr_person_id( # beneficiary
+                              empty = False,
+                              ondelete = "CASCADE",
+                              comment = None,
+                              writable = False,
+                              ),
+                          grant_type_id(
+                              empty = False,
+                              ondelete = "RESTRICT",
+                              writable = False,
+                              ),
+                          Field("refno",
+                                label = T("Ref.No."),
+                                writable = False,
+                                ),
+                          Field("amount_granted", "double",
+                                label = T("Amount granted"),
+                                represent = amount_represent,
+                                writable = False,
+                                ),
+                          Field("amount_received", "double",
+                                label = T("Amount received"),
+                                represent = amount_represent,
+                                writable = False,
+                                ),
+                          Field("status", length=16,
+                                label = T("Status"),
+                                represent = status_represent,
+                                writable = False
+                                ),
+                          )
+
+        # Table configuration
+        self.configure(tablename,
+                       insertable = False,
+                       editable = False,
+                       deletable = False,
+                       )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return {}
 
     # -------------------------------------------------------------------------
-    def defaults(self):
-        """ Safe defaults for names in case the module is disabled """
+    @staticmethod
+    def update_grant_type_totals(grant_type_id):
+        """
+            Updates the totals of a grant type
 
-        return None
+            Args:
+                grant_type_id: the grant type record ID
+        """
+
+        db = current.db
+        s3db = current.s3db
+
+        table = s3db.dvr_grant_type
+        query = (table.id == grant_type_id) & (table.deleted == False)
+        grant_type = db(query).select(table.id,
+                                      table.relative,
+                                      limitby=(0, 1),
+                                      ).first()
+
+        if not grant_type:
+            return
+        absolute = not grant_type.relative
+
+        gtable = s3db.dvr_grant
+        query = (gtable.type_id == grant_type.id) & \
+                (gtable.status.belongs({"APR", "RCV", "SSP"})) & \
+                (gtable.deleted == False)
+        total_beneficiaries = gtable.person_id.count(distinct=True)
+        totals = [total_beneficiaries]
+
+        if absolute:
+            total_amount_granted = gtable.amount_granted.sum()
+            total_amount_received = gtable.amount_received.sum()
+            totals.extend([total_amount_granted, total_amount_received])
+
+        row = db(query).select(*totals).first()
+        update = {"total_beneficiaries": row[total_beneficiaries],
+                  "total_amount_granted": None,
+                  "total_amount_delivered": None,
+                  }
+        if absolute:
+            update["total_amount_granted"] = row[total_amount_granted]
+            update["total_amount_delivered"] = row[total_amount_received]
+
+        grant_type.update_record(**update)
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def grant_onvalidation(form):
+        """
+            Form validation of grants
+            - amount_received must be less or equal amount_granted
+            - any other status than requested|declined requires a ref.no
+        """
+
+        table = current.s3db.dvr_grant
+        data = get_form_record_data(form, table, ["amount_granted",
+                                                  "amount_received",
+                                                  "refno",
+                                                  "status",
+                                                  ])
+        granted = data.get("amount_granted")
+        received = data.get("amount_received")
+        if granted is not None and received is not None and granted < received:
+            form.errors.amount_received = current.T("Amount received must not exceed the amount granted")
+
+        refno = data.get("refno")
+        status = data.get("status")
+        if status not in ("REQ", "DCL") and not refno:
+            form.errors.refno = current.T("Ref.no. required for status")
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def grant_onaccept(cls, form):
+        """
+            Onaccept-routine for grants:
+            - check if record has changed => write history entry, if so
+            - update grant type totals as necessary
+
+            Args:
+                form: the FORM
+        """
+
+        db = current.db
+        s3db = current.s3db
+        auth = current.auth
+
+        record_id = get_form_record_id(form)
+        if not record_id:
+            return
+
+        table = s3db.dvr_grant
+        query = (table.id == record_id) & (table.deleted == False)
+        record = db(query).select(table.id,
+                                  table.type_id,
+                                  table.person_id,
+                                  table.refno,
+                                  table.amount_granted,
+                                  table.amount_received,
+                                  table.status,
+                                  table.vhash,
+                                  limitby = (0, 1),
+                                  ).first()
+        if not record:
+            return
+
+        # Compute vhash
+        values = [record.type_id,
+                  record.person_id,
+                  record.refno,
+                  "%0.2f" % record.amount_granted,
+                  "%0.2f" % record.amount_received,
+                  record.status,
+                  ]
+        vhash = datahash(values)
+        if vhash != record.vhash:
+            htable = s3db.dvr_grant_history
+
+            # Get last history entry
+            query = (htable.grant_id == record.id) & \
+                    (htable.deleted == False)
+            last_entry = db(query).select(htable.id,
+                                          htable.type_id,
+                                          limitby = (0, 1),
+                                          orderby = ~htable.id,
+                                          ).first()
+            if last_entry and last_entry.type_id != record.type_id:
+                # Update totals for the original type, too
+                cls.update_grant_type_totals(last_entry.type_id)
+
+            # Write new history entry
+            entry = {"grant_id": record.id,
+                     "date": current.request.utcnow,
+                     "type_id": record.type_id,
+                     "person_id": record.person_id,
+                     "refno": record.refno,
+                     "amount_granted": record.amount_granted,
+                     "amount_received": record.amount_received,
+                     "status": record.status,
+                     }
+            entry["id"] = entry_id = htable.insert(**entry)
+            if entry_id:
+                s3db.update_super(htable, entry)
+                auth.s3_set_record_owner(htable, entry_id)
+                auth.s3_make_session_owner(htable, entry_id)
+                s3db.onaccept(htable, entry, method="create")
+
+            # Update vhash
+            record.update_record(vhash=vhash)
+
+        # Update grant type totals
+        cls.update_grant_type_totals(record.type_id)
+
+    # -------------------------------------------------------------------------
+    @classmethod
+    def grant_ondelete(cls, row):
+        """
+            Ondelete-routine for grants:
+            - update grant type totals
+        """
+
+        cls.update_grant_type_totals(row.type_id)
 
 # =============================================================================
 def dvr_get_case(person_id, archived=None):
@@ -6752,7 +7202,7 @@ class dvr_ResponseThemeRepresent(S3Represent):
 class dvr_CaseActivityRepresent(S3Represent):
     """ Representation of case activity IDs """
 
-    def __init__(self,
+    def __init__(self, *,
                  show_as = None,
                  fmt = None,
                  show_link = False,
@@ -6913,7 +7363,7 @@ class dvr_CaseActivityRepresent(S3Represent):
 class dvr_DocEntityRepresent(S3Represent):
     """ Module context-specific representation of doc-entities """
 
-    def __init__(self,
+    def __init__(self, *,
                  case_label = None,
                  case_group_label = None,
                  activity_label = None,
@@ -7377,7 +7827,8 @@ class AppointmentEvent:
             following = (db(query), atable.start_date)
 
             # The first of the two that matches the type and has status 2|4
-            for dbset, orderby in (preceding, following):
+            for t in (preceding, following):
+                dbset, orderby = t
                 row = dbset.select(*fields,
                                    orderby = orderby,
                                    limitby = (0, 1),
@@ -7726,6 +8177,8 @@ class DVRManageAppointments(CRUDMethod):
         get_vars = r.get_vars
         response = current.response
 
+        output = None
+
         if not self._permitted("update"):
             r.unauthorised()
 
@@ -7900,7 +8353,6 @@ class DVRManageAppointments(CRUDMethod):
                           }
 
                 response.view = "list_filter.html"
-                return output
 
             elif r.representation == "aadata":
 
@@ -7909,18 +8361,19 @@ class DVRManageAppointments(CRUDMethod):
                     echo = int(get_vars["draw"])
                 else:
                     echo = None
-                items = dt.json(totalrows,
-                                filteredrows,
-                                echo,
-                                dt_bulk_actions = dt_bulk_actions,
-                                )
+                output = dt.json(totalrows,
+                                 filteredrows,
+                                 echo,
+                                 dt_bulk_actions = dt_bulk_actions,
+                                 )
                 response.headers["Content-Type"] = "application/json"
-                return items
 
             else:
                 r.error(415, current.ERROR.BAD_FORMAT)
         else:
             r.error(405, current.ERROR.BAD_METHOD)
+
+        return output
 
 # =============================================================================
 class DVRManageAllowance(CRUDMethod):
@@ -8690,8 +9143,8 @@ class DVRRegisterCaseEvent(CRUDMethod):
         return json.dumps(output)
 
     # -------------------------------------------------------------------------
-    @staticmethod
-    def get_form_data(person, formfields, data, hidden, permitted=False):
+    @classmethod
+    def get_form_data(cls, person, formfields, data, hidden, *, permitted=False):
         """
             Helper function to extend the form
 
@@ -9673,7 +10126,8 @@ class DVRRegisterPayment(DVRRegisterCaseEvent):
         return json.dumps(output)
 
     # -------------------------------------------------------------------------
-    def get_form_data(self, person, formfields, data, hidden, permitted=False):
+    @classmethod
+    def get_form_data(cls, person, formfields, data, hidden, *, permitted=False):
         """
             Helper function to extend the form
 
@@ -9691,7 +10145,7 @@ class DVRRegisterPayment(DVRRegisterCaseEvent):
         T = current.T
 
         if person and permitted:
-            payments = self.get_payment_data(person.id)
+            payments = cls.get_payment_data(person.id)
         else:
             payments = []
 
@@ -9703,7 +10157,7 @@ class DVRRegisterPayment(DVRRegisterCaseEvent):
         formfields.extend([Field("details",
                                  label = T("Pending Payments"),
                                  writable = False,
-                                 represent = self.payment_data_represent,
+                                 represent = cls.payment_data_represent,
                                  ),
                            Field("date",
                                  label = T("Payment Date"),
@@ -10161,9 +10615,9 @@ def dvr_rheader(r, tabs=None):
                         ]
 
             rheader_fields = [[(T("ID"), "pe_label")],
-                              [(T("Name"), s3_fullname)],
                               ["date_of_birth"],
                               ]
+            rheader_title = s3_fullname
 
         elif tablename == "dvr_case":
 
@@ -10172,9 +10626,9 @@ def dvr_rheader(r, tabs=None):
                         (T("Activities"), "case_activity"),
                         ]
 
-            rheader_fields = [["reference"],
-                              ["status_id"],
+            rheader_fields = [["status_id"],
                               ]
+            rheader_title = "reference"
 
         elif tablename == "dvr_task":
 
@@ -10185,11 +10639,24 @@ def dvr_rheader(r, tabs=None):
             rheader_fields = [["person_id"],
                               ["status"],
                               ]
+            rheader_title = "name"
 
-        rheader = S3ResourceHeader(rheader_fields, tabs)(r,
-                                                         table = resource.table,
-                                                         record = record,
-                                                         )
+        elif tablename == "dvr_grant_type":
+
+            if not tabs:
+                tabs = [(T("Basic Details"), None),
+                        (T("Beneficiaries"), "grant"),
+                        ]
+            rheader_fields = [["aid_type"],
+                              ["granting_entity"],
+                              ]
+            rheader_title = "name"
+
+        else:
+            return None
+
+        rheader = S3ResourceHeader(rheader_fields, tabs, title=rheader_title)
+        rheader = rheader(r, table=resource.table, record=record)
 
     return rheader
 

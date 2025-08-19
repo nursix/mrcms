@@ -8,7 +8,13 @@
 // ============================================================================
 // STYLES
 //
-// Request (req) Statuses
+// Generic classes ------------------------------------------------------------
+//
+.out-of-range {
+    color: #a00;
+}
+
+// Request (req) Statuses -----------------------------------------------------
 //
 .req_status_none {
     color: red;
@@ -128,6 +134,9 @@
 .prio-red {
     color: #E0E0E0;
     background-color: #d10000;
+}
+.prio-lightred {
+    background-color: #d17f7f;
 }
 .prio-amber {
     background-color: #ffaa00;
@@ -365,8 +374,9 @@
 }
 
 // ----------------------------------------------------------------------------
-// MED Hazards
+// MED
 //
+// Contamination Hazards
 .hazard-neg, .hazard-pos {
     display: inline-block;
     width: 20px;
@@ -386,6 +396,51 @@
 }
 .hazard-rad.hazard-pos {
     background-image: url(../../img/hazard/rad.png)
+}
+
+// Patient rheader
+.med-reason {
+    font-size: 0.9rem;
+    color: #840088;
+}
+.med-area {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.4rem;
+    background: #eee;
+    margin-right: 1rem;
+    font-weight: normal;
+    vertical-align: top;
+}
+.med-patient, .med-unregistered {
+    font-size: 0.9rem;
+    vertical-align: top;
+}
+.med-unregistered {
+    font-style: italic;
+    color: grey;
+}
+.med-refno {
+  font-size: 0.8rem;
+  padding: 0 0.25rem;
+  vertical-align: top;
+  margin-right: 0.5rem;
+  color: #666;
+  background: #ffddbb;
+  border: 1px solid #333;
+  border-radius: 1rem;
+}
+
+// ----------------------------------------------------------------------------
+// Client gender and age representation
+//
+.client-gender-age {
+    font-size: 0.7rem;
+    vertical-align: top;
+    color: #999;
+    .fa {
+        margin: 0 0.2rem;
+    }
+    margin: 0 1rem;
 }
 
 // END ========================================================================

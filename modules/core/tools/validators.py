@@ -170,8 +170,7 @@ class IS_JSONS3(Validator):
                 parsed = json.loads(value)
             except JSONERRORS as e:
                 raise ValidationError(error(e)) from e
-            else:
-                ret = value if self.native_json else parsed
+            ret = value if self.native_json else parsed
 
         return ret
 
@@ -561,7 +560,7 @@ class IS_FLOAT_AMOUNT(IS_FLOAT_IN_RANGE):
             Args:
                 number: the number
                 precision: the number of decimal places to show
-                fixed: show decimal places even if the decimal part is 0
+                fixed: show (trailing) decimal places even if they are 0
 
             Returns:
                 string representation of the number
@@ -584,9 +583,12 @@ class IS_FLOAT_AMOUNT(IS_FLOAT_IN_RANGE):
         else:
             int_part, dec_part = str_number, ""
 
-        if dec_part and int(dec_part) == 0 and not fixed:
+        if dec_part and not fixed:
             # Omit decimal part if zero
-            dec_part = ""
+            if int(dec_part) == 0:
+                dec_part = ""
+            # Remove trailing zeros
+            dec_part = dec_part.rstrip("0")
 
         if dec_part:
             dec_part = DECIMAL_SEPARATOR + dec_part
@@ -696,7 +698,7 @@ class IS_ONE_OF_EMPTY(Validator):
     def __init__(self,
                  dbset,
                  field,
-                 label = None,
+                 label = None, *,
                  filterby = None,
                  filter_opts = None,
                  not_filterby = None,
@@ -1026,7 +1028,7 @@ class IS_ONE_OF_EMPTY(Validator):
 
         # Available-query
         if "deleted" in table:
-            query &= (table["deleted"] != True)
+            query &= (table["deleted"] == False)
 
         # Realms filter?
         if self.realms:
@@ -1303,7 +1305,7 @@ class IS_NOT_ONE_OF(IS_NOT_IN_DB):
 
     def __init__(self,
                  dbset,
-                 field,
+                 field, *,
                  error_message = "Value already in database or empty",
                  allowed_override = None,
                  ignore_common_filters = False,
@@ -1397,7 +1399,7 @@ class IS_NOT_ONE_OF(IS_NOT_IN_DB):
                 # Keyed table
                 for f in keys:
                     if str(getattr(row, f)) != str(record_id[f]):
-                        ValidationError(translate(self.error_message))
+                        raise ValidationError(translate(self.error_message))
 
             elif str(row[table._id.name]) != str(record_id):
 
@@ -1504,6 +1506,7 @@ class IS_PROCESSED_IMAGE(Validator):
     def __init__(self,
                  field_name,
                  file_cb,
+                 *,
                  error_message = "No image was specified!",
                  image_bounds = (300, 300),
                  upload_path = None,
@@ -1653,7 +1656,7 @@ class IS_UTC_DATETIME(Validator):
               day.
     """
 
-    def __init__(self,
+    def __init__(self, *,
                  format = None,
                  error_message = None,
                  offset_error = None,
@@ -1809,7 +1812,7 @@ class IS_UTC_DATE(IS_UTC_DATETIME):
             time zone, i.e. the most Eastern timezones are on the next day.
     """
 
-    def __init__(self,
+    def __init__(self, *,
                  format = None,
                  error_message = None,
                  offset_error = None,
@@ -2026,7 +2029,7 @@ class IS_IN_SET_LAZY(Validator):
 
     def __init__(self,
                  theset_fn,
-                 represent = None,
+                 represent = None, *,
                  error_message = "value not allowed",
                  multiple = False,
                  zero = "",
@@ -2428,7 +2431,7 @@ class IS_ISO639_2_LANGUAGE_CODE(IS_IN_SET):
         Validate ISO639-2 Alpha-2/Alpha-3 language codes
     """
 
-    def __init__(self,
+    def __init__(self, *,
                  error_message = "Invalid language code",
                  multiple = False,
                  select = DEFAULT,

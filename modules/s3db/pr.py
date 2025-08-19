@@ -106,7 +106,6 @@ __all__ = (# PR Base Entities
            # Data List Default Layouts
            #"pr_address_list_layout",
            #"pr_contact_list_layout",
-           #"pr_filter_list_layout",
            )
 
 import json
@@ -115,7 +114,7 @@ import os
 from urllib.parse import urlencode
 
 from gluon import current, redirect, URL, \
-                  A, DIV, H2, H3, H5, IMG, LABEL, P, SPAN, TABLE, TAG, TH, TR, \
+                  A, DIV, H2, H3, IMG, LABEL, P, SPAN, TABLE, TAG, TH, TR, \
                   IS_LENGTH, IS_EMPTY_OR, IS_IN_SET, IS_NOT_EMPTY, IS_EMAIL, \
                   IS_INT_IN_RANGE
 from gluon.storage import Storage
@@ -1166,6 +1165,7 @@ class PRPersonModel(DataModel):
                        med_anamnesis = {"joinby": "person_id",
                                         "multiple": False,
                                         },
+                       med_epicrisis = "person_id",
 
                        # Seized Items (owner)
                        security_seized_item = "person_id",
@@ -1207,6 +1207,7 @@ class PRPersonModel(DataModel):
                        dvr_case_language = "person_id",
                        dvr_response_action = "person_id",
                        dvr_allowance = "person_id",
+                       dvr_grant = "person_id",
                        dvr_note = {"name": "case_note",
                                    "joinby": "person_id",
                                    },
@@ -1282,15 +1283,23 @@ class PRPersonModel(DataModel):
         elif hasattr(row, "id"):
             # date_of_birth not in row: reload the record
             table = current.s3db.pr_person
-            person = current.db(table.id == row.id).select(
-                                                     table.date_of_birth,
-                                                     limitby=(0, 1)).first()
+            person = current.db(table.id == row.id).select(table.date_of_birth,
+                                                           table.deceased,
+                                                           table.date_of_death,
+                                                           limitby=(0, 1),
+                                                           ).first()
             dob = person.date_of_birth if person else None
         else:
             dob = None
-        if dob:
+
+        if hasattr(row, "deceased") and row.deceased:
+            reference = row.date_of_death if hasattr(row, "date_of_death") else None
+        else:
+            reference = current.request.utcnow.date()
+
+        if dob and reference:
             from dateutil.relativedelta import relativedelta
-            delta = relativedelta(current.request.utcnow.date(), dob)
+            delta = relativedelta(reference, dob)
             return delta.months if months else delta.years
         else:
             return None
@@ -2058,7 +2067,7 @@ class PRPersonModel(DataModel):
 
         # If no results then search other fields
         # @ToDo: Do these searches anyway & merge results together
-        if not len(rows):
+        if not rows:
             rfilter = resource.rfilter
             if dob:
                 # Try DoB
@@ -2071,7 +2080,7 @@ class PRPersonModel(DataModel):
                 rows = resource.select(fields=fields,
                                        start=0,
                                        limit=MAX_SEARCH_RESULTS)["rows"]
-            if not len(rows) and email:
+            if not rows and email:
                 # Try Email
                 # Remove the name or DoB filter (last one in)
                 rfilter.filters.pop()
@@ -2082,7 +2091,7 @@ class PRPersonModel(DataModel):
                 rows = resource.select(fields=fields,
                                        start=0,
                                        limit=MAX_SEARCH_RESULTS)["rows"]
-            if not len(rows) and mobile_phone:
+            if not rows and mobile_phone:
                 # Try Mobile Phone
                 # Remove the name or DoB or email filter (last one in)
                 rfilter.filters.pop()
@@ -2093,7 +2102,7 @@ class PRPersonModel(DataModel):
                 rows = resource.select(fields=fields,
                                        start=0,
                                        limit=MAX_SEARCH_RESULTS)["rows"]
-            if not len(rows) and home_phone:
+            if not rows and home_phone:
                 # Try Home Phone
                 # Remove the name or DoB or email or mobile filter (last one in)
                 rfilter.filters.pop()
@@ -2885,8 +2894,10 @@ class PRGroupTagModel(DataModel):
                                                  ),
                        )
 
+        # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
-        return None
+        #
+        #return {}
 
 # =============================================================================
 class PRForumModel(DataModel):
@@ -3884,7 +3895,7 @@ class PRImageModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -4326,7 +4337,7 @@ class PRAvailabilityModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -4486,7 +4497,7 @@ class PRUnavailabilityModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
 # =============================================================================
 class PRDescriptionModel(DataModel):
@@ -5108,7 +5119,7 @@ class PREducationModel(DataModel):
         # ---------------------------------------------------------------------
         # Return model-global names to response.s3
         #
-        return None
+        #return {}
 
 # =============================================================================
 class PRIdentityModel(DataModel):
@@ -5268,7 +5279,7 @@ class PRIdentityModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
 # =============================================================================
 class PRLanguageModel(DataModel):
@@ -5331,7 +5342,7 @@ class PRLanguageModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
 # =============================================================================
 class PROccupationModel(DataModel):
@@ -5422,7 +5433,7 @@ class PROccupationModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        #return {}
 
 # =============================================================================
 class PRPersonDetailsModel(DataModel):
@@ -5639,8 +5650,10 @@ class PRPersonTagModel(DataModel):
                                                  ),
                        )
 
+        # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
-        return None
+        #
+        #return {}
 
 # =============================================================================
 class PRImageLibraryModel(DataModel):
@@ -5732,7 +5745,8 @@ class PRImageLibraryModel(DataModel):
 class PRSavedFilterModel(DataModel):
     """ Saved Filters """
 
-    # TODO replace by usr_filter
+    # DEPRECATED
+    # TODO Remove after transition to usr_filter
 
     names = ("pr_filter",
              "pr_filter_id",
@@ -5785,7 +5799,7 @@ class PRSavedFilterModel(DataModel):
                                       "url",
                                       "query",
                                       ],
-                       list_layout = pr_filter_list_layout,
+                       # list_layout = pr_filter_list_layout,
                        onvalidation = self.pr_filter_onvalidation,
                        orderby = "pr_filter.resource",
                        )
@@ -6445,10 +6459,8 @@ class pr_PersonRepresentContact(pr_PersonRepresent):
         except AttributeError:
             pass
         else:
-            if self.show_email:
-                email = self._email.get(pe_id)
-            if self.show_phone:
-                phone = self._phone.get(pe_id)
+            email = self._email.get(pe_id) if self.show_email else None
+            phone = self._phone.get(pe_id) if self.show_phone else None
             if email or phone:
                 details = DIV(_class="contact-details")
                 if email:
@@ -7369,6 +7381,7 @@ def pr_compose():
     #    url = URL(f="group", args=record_id)
 
     else:
+        pe_id = title = url = None
         current.session.error = current.T("Record not found")
         redirect(URL(f="index"))
 
@@ -7383,8 +7396,7 @@ def pr_compose():
     #        redirect(URL(f="index"))
 
     # Create the form
-    output = current.msg.compose(recipient = pe_id,
-                                 url = url)
+    output = current.msg.compose(recipient=pe_id, url=url)
 
     output["title"] = title
 
@@ -8747,9 +8759,8 @@ def pr_get_descendants(pe_ids, entity_types=None, skip=None, ids=True):
 
     if not pe_ids:
         return []
-    if type(pe_ids) is not set:
-        pe_ids = set(pe_ids) \
-                 if isinstance(pe_ids, (list, tuple)) else {pe_ids}
+    if not isinstance(pe_ids, set):
+        pe_ids = set(pe_ids) if isinstance(pe_ids, (list, tuple)) else {pe_ids}
 
     db = current.db
     s3db = current.s3db
@@ -8789,7 +8800,7 @@ def pr_get_descendants(pe_ids, entity_types=None, skip=None, ids=True):
 
     if ids:
         if entity_types is not None:
-            if type(entity_types) is not set:
+            if not isinstance(entity_types, set):
                 if not isinstance(entity_types, (tuple, list)):
                     entity_types = {entity_types}
                 else:
@@ -8927,6 +8938,10 @@ def pr_image_modify(image_file,
             pil_imported = True
         except ImportError:
             pil_imported = False
+    try:
+        ANTIALIAS = Image.LANCZOS
+    except AttributeError:
+        ANTIALIAS = Image.ANTIALIAS
 
     if pil_imported:
         from tempfile import TemporaryFile
@@ -8947,7 +8962,7 @@ def pr_image_modify(image_file,
         else:
             thumb_size.append(size[1])
         try:
-            im.thumbnail(thumb_size, Image.ANTIALIAS)
+            im.thumbnail(thumb_size, ANTIALIAS)
         except IOError:
             # Maybe need to reinstall pillow:
             #pip uninstall pillow
@@ -9130,7 +9145,7 @@ def pr_address_list_layout(list_id, item_id, resource, rfields, record):
         l = raw.get("gis_location.%s" % level, None)
         if l:
             locations.append(l)
-    if len(locations):
+    if locations:
         location = " | ".join(locations)
         location = P(ICON("globe"),
                      " ",
@@ -9747,144 +9762,6 @@ class pr_PersonSearchAutocomplete(CRUDMethod):
         response.headers["Content-Type"] = "application/json"
         return json.dumps(output, separators=JSONSEPARATORS)
 
-# =============================================================================
-def pr_filter_list_layout(list_id, item_id, resource, rfields, record):
-    """
-        Default dataList item renderer for Saved Filters
-
-        Args:
-            list_id: the HTML ID of the list
-            item_id: the HTML ID of the item
-            resource: the CRUDResource to render
-            rfields: the S3ResourceFields to render
-            record: the record as dict
-    """
-
-    record_id = record["pr_filter.id"]
-    item_class = "thumbnail"
-
-    raw = record._row
-
-    T = current.T
-    resource_name = raw["pr_filter.resource"]
-    resource = current.s3db.resource(resource_name)
-
-    # Resource title
-    crud_strings = current.response.s3.crud_strings.get(resource.tablename)
-    if crud_strings:
-        resource_name = crud_strings.title_list
-    else:
-        resource_name = " ".join(s.capitalize() for s in resource.name.split("_"))
-
-    # Filter title
-    title = record["pr_filter.title"]
-
-    # Filter Query
-    fstring = URLQueryJSON(resource, raw["pr_filter.query"])
-    query = fstring.represent()
-
-    # Actions
-    actions = filter_actions(resource,
-                             raw["pr_filter.url"],
-                             fstring.get_vars)
-
-    # Render the item
-    item = DIV(DIV(DIV(actions,
-                       _class = "action-bar fleft",
-                       ),
-                   SPAN(T("%(resource)s Filter") % \
-                        {"resource": resource_name},
-                        _class = "card-title",
-                        ),
-                    DIV(A(ICON("delete"),
-                          _title = T("Delete this Filter"),
-                          _class = "dl-item-delete",
-                          ),
-                        _class = "edit-bar fright",
-                        ),
-                   _class = "card-header",
-                   ),
-               DIV(DIV(H5(title,
-                          _id = "filter-title-%s" % record_id,
-                          _class = "media-heading jeditable",
-                          ),
-                       DIV(query),
-                       _class = "media-body",
-                       ),
-                   _class = "media",
-                   ),
-               _class = item_class,
-               _id = item_id,
-               )
-
-    return item
-
-# -----------------------------------------------------------------------------
-def filter_actions(resource, url, filters):
-    """
-        Helper to construct the actions for a saved filter.
-
-        Args:
-            resource: the CRUDResource
-            url: the filter page URL
-            filters: the filter GET vars
-    """
-
-    if not url:
-        return ""
-
-    T = current.T
-    actions = []
-    append = actions.append
-    tablename = resource.tablename
-    filter_actions = current.s3db.get_config(tablename, "filter_actions")
-    if filter_actions:
-        controller, fn = tablename.split("_", 1)
-        for action in filter_actions:
-            c = action.get("controller", controller)
-            f = action.get("function", fn)
-            m = action.get("method", None)
-            if m:
-                args = [m]
-            else:
-                args = []
-            e = action.get("format", None)
-            link = URL(c=c, f=f,
-                       args = args,
-                       extension = e,
-                       vars = filters,
-                       )
-            append(A(ICON(action.get("icon", "other")),
-                     _title = T(action.get("label", "Open")),
-                     _href = link,
-                     ))
-    else:
-        # Default to using Summary Tabs
-        links = summary_urls(resource, url, filters)
-        if links:
-            if "map" in links:
-                append(A(ICON("globe"),
-                         _title = T("Open Map"),
-                         _href = links["map"],
-                         ))
-            if "table" in links:
-                append(A(ICON("table"),
-                         _title = T("Open Table"),
-                         _href = links["table"],
-                         ))
-            if "chart" in links:
-                append(A(ICON("bar-chart"),
-                         _title = T("Open Chart"),
-                         _href = links["chart"],
-                         ))
-            if "report" in links:
-                append(A(ICON("bar-chart"),
-                         _title = T("Open Report"),
-                         _href = links["report"],
-                         ))
-
-    return actions
-
 # -----------------------------------------------------------------------------
 def summary_urls(resource, url, filters):
     """
@@ -9907,7 +9784,7 @@ def summary_urls(resource, url, filters):
     for (k, v) in get_vars.items():
         if v is None:
             continue
-        values = v if type(v) is list else [v]
+        values = v if isinstance(v, list) else [v]
         for value in values:
             if value is not None:
                 list_vars.append((k, value))
