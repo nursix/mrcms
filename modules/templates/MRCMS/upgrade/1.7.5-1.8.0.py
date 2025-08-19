@@ -79,15 +79,72 @@ if not failed:
     infoln("...done (%s filters migrated)" % migrated)
 
 # -----------------------------------------------------------------------------
+# Deploy vaccination types
+#
+if not failed:
+    info("Deploy vaccination types")
+
+    resource = s3db.resource("med_vaccination_type")
+
+    # File and stylesheet paths
+    stylesheet = os.path.join(IMPORT_XSLT_FOLDER, "med", "vaccination_type.xsl")
+    filename = os.path.join(TEMPLATE_FOLDER, "JUH", "vaccination_type.csv")
+
+    # Import, capture errors
+    try:
+        with open(filename, "r") as File:
+            resource.import_xml(File, source_type="csv", stylesheet=stylesheet)
+    except Exception as e:
+        error = sys.exc_info()[1] or "unknown error"
+    else:
+        error = resource.error
+
+    # Fail on any error
+    if error:
+        infoln("...failed")
+        infoln(error)
+        failed = True
+    else:
+        infoln("...done")
+
+# -----------------------------------------------------------------------------
+# Deploy active substances
+#
+if not failed:
+    info("Deploy active substances")
+
+    resource = s3db.resource("med_substance")
+
+    # File and stylesheet paths
+    stylesheet = os.path.join(IMPORT_XSLT_FOLDER, "med", "substance.xsl")
+    filename = os.path.join(TEMPLATE_FOLDER, "JUH", "substance.csv")
+
+    # Import, capture errors
+    try:
+        with open(filename, "r") as File:
+            resource.import_xml(File, source_type="csv", stylesheet=stylesheet)
+    except Exception as e:
+        error = sys.exc_info()[1] or "unknown error"
+    else:
+        error = resource.error
+
+    # Fail on any error
+    if error:
+        infoln("...failed")
+        infoln(error)
+        failed = True
+    else:
+        infoln("...done")
+
+# -----------------------------------------------------------------------------
 # Upgrade user roles
 #
 if not failed:
     info("Upgrade user roles")
 
     # Delete invalid rules
-    deleted = 0
     query = (rtable.tablename.belongs({"pr_filter"}))
-    deleted += db(query).delete()
+    deleted = db(query).delete()
     info("...%s invalid rules removed" % deleted)
 
     # Re-import correct rules
