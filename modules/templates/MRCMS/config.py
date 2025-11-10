@@ -47,7 +47,7 @@ def config(settings):
     # Do new users need to verify their email address?
     #settings.auth.registration_requires_verification = True
     # Do new users need to be approved by an administrator prior to being able to login?
-    #settings.auth.registration_requires_approval = True
+    settings.auth.registration_requires_approval = True
     # Do not send welcome emails to newly registered users
     settings.auth.registration_welcome_email = False
     # New user registration requires selection of organisation
