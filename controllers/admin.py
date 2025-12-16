@@ -12,7 +12,7 @@ def index():
             }
 
 # =============================================================================
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def setting():
     """
         Custom page to link to those Settings which can be edited through
@@ -24,7 +24,7 @@ def setting():
 # =============================================================================
 # AAA
 # =============================================================================
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def role():
     """ Role Manager """
 
@@ -45,6 +45,7 @@ def user():
     s3_has_role = auth.s3_has_role
 
     UNAPPROVED = request.get_vars.get("unapproved")
+    DISABLED = ("disabled", "blocked", "failed")
 
     # Check for ADMIN first since ADMINs have all roles
     ADMIN = False
@@ -189,7 +190,7 @@ def user():
 
         if UNAPPROVED:
             registration_key = FS("registration_key")
-            query = (registration_key != "disabled") & \
+            query = (~(registration_key.belongs(DISABLED))) & \
                     (registration_key != None) & \
                     (registration_key != "")
             r.resource.add_filter(query)
@@ -267,7 +268,7 @@ def user():
 
                 # Only show the disable button if the user is not currently disabled
                 table = r.table
-                query = (table.registration_key == "disabled") & \
+                query = (table.registration_key.belongs(DISABLED)) & \
                         (table.deleted == False)
                 rows = db(query).select(table.id)
                 disabled = [str(row.id) for row in rows]
@@ -299,7 +300,7 @@ def user():
                                        }
                                    )
                 # Only show the approve button if the user is currently pending
-                query = (table.registration_key != "disabled") & \
+                query = (~(table.registration_key.belongs(DISABLED))) & \
                         (table.registration_key != None) & \
                         (table.registration_key != "")
                 rows = db(query).select(table.id)
@@ -422,7 +423,7 @@ def group():
     return crud_controller("auth", "group")
 
 # -----------------------------------------------------------------------------
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def organisation():
     """
         RESTful CRUD controller
@@ -459,7 +460,7 @@ def user_create_onvalidation (form):
 # =============================================================================
 # Audit
 #
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def audit():
     """ Audit Logs: RESTful CRUD Controller """
 
@@ -474,7 +475,7 @@ def audit():
     return crud_controller("s3", "audit")
 
 # =============================================================================
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def event():
     """
         CRUD controller for Auth event log
@@ -517,7 +518,7 @@ def event():
 # =============================================================================
 # Consent Tracking
 #
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def processing_type():
     """ Types of Data Processing: RESTful CRUD Controller """
 
@@ -527,7 +528,7 @@ def processing_type():
                            )
 
 # -----------------------------------------------------------------------------
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def consent_option():
     """ Consent Options: RESTful CRUD Controller """
 
@@ -598,7 +599,7 @@ def consent_option():
                            )
 
 # =============================================================================
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def consent():
 
     return crud_controller("auth", "consent")
@@ -607,7 +608,7 @@ def consent():
 # Ticket viewing
 # - web2Py ticket viewer functions borrowed from admin application of web2py
 #
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def errors():
     """ Error ticket list """
 
@@ -628,7 +629,7 @@ def errors():
             }
 
 # -----------------------------------------------------------------------------
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def ticket():
     """ Ticket viewer """
 
@@ -653,7 +654,7 @@ def ticket():
 # =============================================================================
 # Create portable app
 # =============================================================================
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def portable():
     """ Portable app creator"""
 
@@ -825,7 +826,7 @@ def create_portable_app(web2py_source, copy_database=False, copy_uploads=False):
     return response.stream(portable_app)
 
 # =============================================================================
-@auth.s3_requires_membership(1)
+@auth.requires_membership(1)
 def task():
     """
         Scheduler tasks: RESTful CRUD controller

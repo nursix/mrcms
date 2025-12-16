@@ -81,6 +81,12 @@ settings.base.debug = False
 # Allow language files to be updated automatically
 #settings.L10n.languages_readonly = False
 
+# Authentication settings
+# Maxmimum number of failed login attempts before an account is locked
+#settings.auth.max_login_attempts = 3
+# Timeout (seconds) for locking an account after max failed logins
+#settings.auth.failed_login_lock_timeout = 300
+
 # This setting should be changed _before_ registering the 1st user
 # - should happen automatically if installing using supported scripts
 settings.auth.hmac_key = "akeytochange"

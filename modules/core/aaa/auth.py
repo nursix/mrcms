@@ -50,11 +50,12 @@ from ..model import MetaFields, CommentsField
 from ..tools import IS_ISO639_2_LANGUAGE_CODE, S3Represent, S3Tracker, \
                     s3_addrow, s3_mark_required, s3_str
 
+from .lock import AccountLockingMixin
 from .permissions import S3Permission
 from .consent import ConsentTracking
 
 # =============================================================================
-class AuthS3(Auth):
+class AuthS3(AccountLockingMixin, Auth):
     """
         S3 extensions of the gluon.tools.Auth class
 
@@ -115,9 +116,9 @@ class AuthS3(Auth):
             - s3_has_permission
             - s3_accessible_query
 
-        - S3 variants of web2py authorization methods:
-            - s3_has_membership
-            - s3_requires_membership
+        - S3 overrides of web2py authorization methods:
+            - has_membership (with deleted flag support)
+            - requires_membership
 
         - S3 record ownership methods:
             - s3_make_session_owner
@@ -191,7 +192,7 @@ No action is required."""
         messages.registration_disabled = "Registration Disabled!"
         messages.registration_verifying = "You haven't yet Verified your account - please check your email"
         messages.reset_password = "Click on the link %(url)s to reset your password"
-        messages.verify_email = "Click on the link %(url)s to verify your email"
+        messages.verify_email = "Click on the link %(url)s to verify your email.\n\nYou activation code is: %(code)s"
         messages.verify_email_subject = "%(system_name)s - Verify Email"
         messages.welcome_email_subject = "Welcome to %(system_name)s"
         messages.welcome_email = \
@@ -199,11 +200,23 @@ No action is required."""
  - You can start using %(system_name)s at: %(url)s
  - To edit your profile go to: %(url)s%(profile)s
 Thank you"""
+        messages.locked_email_subject = "%(system_name)s - Account Locked"
+        messages.locked_email = \
+"""Your account on %(system_name)s has been locked due to excessive failed login attempts.
+ - Please change your password at your earliest convenience.
+ Thank you"""
+        messages.unlocked_email_subject = "%(system_name)s - Account Unlocked"
+        messages.unlocked_email = \
+"""Your account on %(system_name)s has been unlocked.
+ - You can now log in again.
+ Thank you"""
 
         # Log messages
         messages.user_disabled_log = "User %(user_id)s disabled"
         messages.user_enabled_log = "User %(user_id)s (re-)enabled"
         messages.user_approved_log = "User %(user_id)s approved"
+        messages.user_locked_log = "User %%(%s)s locked due to excessive failed login attempts" % settings.login_userfield
+        messages.login_attempts_exceeded = "Login attempts exceeded"
 
         # Optional log messages
         if log_failed_logins:
@@ -299,6 +312,15 @@ Thank you"""
                       readable=False, writable=False),
                 Field("reset_password_key", length=512,
                       default="",
+                      readable=False, writable=False),
+                Field("locked", "boolean",
+                      default=False,
+                      readable=False, writable=False),
+                Field("failed_attempts", "integer",
+                      default=0,
+                      readable=False, writable=False),
+                Field("locked_until", "datetime",
+                      default=None,
                       readable=False, writable=False),
                 Field("deleted", "boolean",
                       default=False,
@@ -494,6 +516,7 @@ Thank you"""
         """
             Logs user in
                 - extended to understand session.s3.roles
+                - extended to handle login failures
         """
 
         self.ignore_min_password_length()
@@ -506,16 +529,22 @@ Thank you"""
 
         query = (utable[userfield] == username)
         user = current.db(query).select(limitby=(0, 1)).first()
-        password = utable[passfield].validate(password)[0]
-        if user:
-            if not user.registration_key and user[passfield] == password:
+
+        if user and not user.registration_key:
+            password = utable[passfield].validate(password)[0]
+            if user[passfield] == password:
                 user = Storage(utable._filter_fields(user, id=True))
                 current.session.auth = Storage(user = user,
                                                last_visit = current.request.now,
-                                               expiration = settings.expiration)
+                                               expiration = settings.expiration,
+                                               )
+                self.unlock_user(user)
                 self.user = user
                 self.s3_set_roles()
                 return user
+            else:
+                self.handle_failed_login(user=user)
+
         return False
 
     # -------------------------------------------------------------------------
@@ -703,7 +732,6 @@ Thank you"""
 
                 # Check for username in db
                 existing = None
-
                 query = (utable[userfield] == form.vars[userfield])
                 user = db(query).select(limitby=(0, 1)).first()
 
@@ -711,15 +739,28 @@ Thank you"""
                     # User in db
                     existing = temp_user = user
 
-                    # Check if registration pending or account disabled
-                    if temp_user.registration_key == "pending":
+                    # Check if login is permitted
+                    if self.is_user_locked(temp_user):
+                        # Account is locked due to too many failed login attempts
+                        self.handle_failed_login(user=temp_user)
+                        response.error = messages.login_attempts_exceeded
+                        response.error_code = 423
+                        return form
+
+                    from .lock import LOCKED
+                    registration_key = temp_user.registration_key
+                    if registration_key == "pending":
+                        # Account is verified, but pending approval
                         response.warning = deployment_settings.get_auth_registration_pending()
                         return form
-                    elif temp_user.registration_key in ("disabled", "blocked"):
+                    elif registration_key in ("disabled", "blocked"):
+                        # Account has been disabled|blocked by ADMIN
                         response.error = messages.login_disabled
                         return form
-                    elif not temp_user.registration_key is None and \
-                             temp_user.registration_key.strip():
+                    elif registration_key is not None and \
+                         registration_key != LOCKED and \
+                         registration_key.strip():
+                        # Account has not yet been verified
                         response.warning = messages.registration_verifying
                         return form
 
@@ -771,6 +812,11 @@ Thank you"""
                     if existing or settings.log_all_failed_logins:
                         self.log_event(messages.login_failed_log, request.post_vars)
                     session.error = messages.invalid_login
+
+                    # Handle failed login attempts
+                    if existing:
+                        self.handle_failed_login(user=existing)
+
                     if inline:
                         # If inline, stay on the same page
                         next_url = URL(args=request.args,
@@ -1138,11 +1184,15 @@ Thank you"""
             remember = "remember" in req_vars,
             hmac_key = web2py_uuid()
             )
+
         self.user = user
         self.s3_set_roles()
 
         # Set a Cookie to present user with login box by default
         self.set_cookie()
+
+        # If the user had been locked, unlock them now
+        self.unlock_user(user)
 
         # Read their language from the Profile
         language = user.language
@@ -1532,7 +1582,11 @@ $('form.auth_consent').submit(S3ClearNavigateAwayConfirm);''')
         if settings.captcha != None:
             form[0].insert(-1, DIV("", settings.captcha, ""))
 
-        utable.registration_key.default = key = str(uuid4())
+        # Set default registration key, so new users are prevented
+        # from logging in until approved
+        key = str(uuid4())
+        code = uuid4().hex[-6:].upper()
+        utable.registration_key.default = self.keyhash(key, code)
 
         if form.accepts(request.vars, session, formname="register",
                         onvalidation=onvalidation):
@@ -1561,24 +1615,34 @@ $('form.auth_consent').submit(S3ClearNavigateAwayConfirm);''')
                 self.s3_send_welcome_email(form.vars)
 
             elif settings.registration_requires_verification:
-                # Send the Verification email
+                # Request User Verify their Email
+                # System Details for Verification Email
+                verify_url = URL(c = "default",
+                                 f = "user",
+                                 args = ["verify_email", key],
+                                 scheme = "https" if request.is_https else "http",
+                                 )
+                system = {"system_name": deployment_settings.get_system_name(),
+                          "url": verify_url,
+                          "code": code,
+                          }
+
+                # Try to send the Verification Email
                 if not settings.mailer or \
                    not settings.mailer.settings.server or \
                    not settings.mailer.send(to = form.vars.email,
-                                            subject = messages.verify_email_subject % \
-    {"system_name": deployment_settings.get_system_name()},
-                                            message = messages.verify_email % \
-            {"url": "%s/default/user/verify_email/%s" % \
-                (current.response.s3.base_url, key)}):
+                                            subject = messages.verify_email_subject % system,
+                                            message = messages.verify_email % system,
+                                            ):
                     current.response.error = messages.email_verification_failed
                     return form
+
                 # @ToDo: Deployment Setting?
                 #session.confirmation = messages.email_sent
                 next = URL(c="default", f="message",
                            args = ["verify_email_sent"],
                            vars = {"email": form.vars.email},
                            )
-
             else:
                 # Does the user need to be approved?
                 approved = self.s3_verify_user(form.vars)
@@ -1682,40 +1746,114 @@ $('form.auth_consent').submit(S3ClearNavigateAwayConfirm);''')
     # -------------------------------------------------------------------------
     def verify_email(self, next=DEFAULT, log=DEFAULT):
         """
-            Action when user clicks the link in the verification email
+            Dialog to verify the email address of a user; presents
+            a form to enter the activation code that has been sent
+            with the verification email
+
+            Args:
+                next: the URL to redirect to after processing
+                log: the log message for the event
+
+            Returns:
+                FORM
         """
 
-        settings = self.settings
+        T = current.T
+
         request = current.request
+        response = current.response
+        session = current.session
+
+        settings = current.deployment_settings
 
         # Customise the resource
-        customise = current.deployment_settings.customise_resource("auth_user")
+        customise = settings.customise_resource("auth_user")
         if customise:
             customise(request, "auth_user")
 
-        key = request.args[-1]
-        utable = settings.table_user
-        query = (utable.registration_key == key)
-        user = current.db(query).select(limitby=(0, 1)).first()
-        if not user:
-            redirect(settings.verify_email_next)
+        # Get the registration key
+        if request.env.request_method == "POST":
+            key = request.post_vars.registration_key
+        elif len(request.args) > 1:
+            key = request.args[-1]
+        else:
+            key = None
+        if not key:
+            session.error = T("Missing registration key")
+            redirect(URL(c="default", f="index"))
 
-        if log == DEFAULT:
-            log = self.messages.verify_email_log
-        if next == DEFAULT:
-            next = settings.verify_email_next
+        formfields = [Field("activation_code",
+                            label = T("Please enter your Activation Code"),
+                            requires = IS_NOT_EMPTY(),
+                            ),
+                      ]
 
-        approved = self.s3_verify_user(user)
+        # Construct the form
+        response.form_label_separator = ""
+        form = SQLFORM.factory(table_name = "auth_user",
+                               record = None,
+                               hidden = {"_next": request.vars._next,
+                                         "registration_key": key,
+                                         },
+                               separator = ":",
+                               showid = False,
+                               submit_button = T("Submit"),
+                               formstyle = settings.get_ui_formstyle(),
+                               #buttons = buttons,
+                               *formfields)
 
-        if approved:
-            # Log them in
-            user = Storage(utable._filter_fields(user, id=True))
-            self.login_user(user)
+        if form.accepts(request.vars,
+                        session,
+                        formname = "register_confirm",
+                        ):
 
-        if log:
-            self.log_event(log, user)
+            auth_settings = self.settings
 
-        redirect(next)
+            # Get registration key from URL
+            code = form.vars.activation_code
+
+            # Find the pending user account
+            utable = auth_settings.table_user
+            query = (utable.registration_key == self.keyhash(key, code))
+            user = current.db(query).select(limitby=(0, 1)).first()
+            if not user:
+                session.error = T("Registration not found")
+                redirect(auth_settings.verify_email_next)
+
+            if log == DEFAULT:
+                log = self.messages.verify_email_log
+            if next == DEFAULT:
+                next = auth_settings.verify_email_next
+
+            approved = self.s3_verify_user(user)
+            if approved:
+                # Log them in
+                user = Storage(utable._filter_fields(user, id=True))
+                self.login_user(user)
+            if log:
+                self.log_event(log, user)
+
+            redirect(next)
+
+        return form
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def keyhash(key, code):
+        """
+            Generate a hash of the activation code using
+            the registration key
+
+            Args:
+                key: the registration key
+                code: the activation code
+
+            Returns:
+                the hash as string
+        """
+
+        crypt = CRYPT(key=key, digest_alg="sha512", salt=None)
+        return str(crypt(code.upper())[0])
 
     # -------------------------------------------------------------------------
     def profile(self,
@@ -4806,42 +4944,72 @@ Please go to %(url)s to approve this user."""
     # -------------------------------------------------------------------------
     # S3 Variants of web2py Authorization Methods
     # -------------------------------------------------------------------------
-    def s3_has_membership(self, group_id=None, user_id=None, role=None):
+    def has_membership(self, group_id=None, user_id=None, role=None):
         """
             Checks if user is member of group_id or role
 
-            Extends Web2Py's requires_membership() to add new functionality:
+            Extends Web2Py's has_membership() to add:
+                - Respect for the deleted flag in auth_membership
                 - Custom Flash style
-                - Uses s3_has_role()
+
+            Args:
+                group_id: the group ID to check membership for
+                user_id: the user ID to check (defaults to current user)
+                role: the role name (alternative to group_id)
+
+            Returns:
+                True if the user is a member of the group, False otherwise
         """
 
         # Allow override
         if self.override:
             return True
 
+        # Determine user_id
+        if not user_id and self.user:
+            user_id = self.user.id
+        elif user_id:
+            # Validate the user_id: invalid user_id must not pass has_membership test
+            utable = self.table_user()
+            if not self.db(utable.id==user_id).select(utable.id, limitby=(0, 1)).first():
+                return False
+
+        # Resolve group_id from role if needed
+        # TODO support group UIDs (e.g. "ADMIN" instead of 1)
         group_id = group_id or self.id_group(role)
         try:
             group_id = int(group_id)
         except:
-            group_id = self.id_group(group_id) # interpret group_id as a role
+            group_id = self.id_group(group_id)  # interpret group_id as a role
 
-        has_role = self.s3_has_role(group_id)
+        ret = False
 
+        sr = self.get_system_roles()
+        if group_id == sr.ANONYMOUS:
+            # All users are members of the ANONYMOUS group
+            ret = True
+        elif group_id == sr.AUTHENTICATED and user_id:
+            # All registered users are members of the AUTHENTICATED group
+            ret = True
+        elif group_id and user_id:
+            membership = self.table_membership()
+            query = (membership.user_id == user_id) & \
+                    (membership.group_id == group_id) & \
+                    (membership.deleted == False)
+            if self.db(query).select(membership.id, limitby=(0, 1)).first():
+                ret = True
+
+        # Log the check
         log = self.messages.has_membership_log
         if log:
-            if not user_id and self.user:
-                user_id = self.user.id
             self.log_event(log, {"user_id": user_id,
                                  "group_id": group_id,
-                                 "check": has_role,
+                                 "check": ret,
                                  })
-        return has_role
-
-    # Override original method
-    has_membership = s3_has_membership
+        return ret
 
     # -------------------------------------------------------------------------
-    def s3_requires_membership(self, role):
+    def requires_membership(self, role):
         """
             Decorator that prevents access to action if not logged in or
             if user logged in is not a member of group_id. If role is
@@ -4871,9 +5039,6 @@ Please go to %(url)s to approve this user."""
             return f
 
         return decorator
-
-    # Override original method
-    requires_membership = s3_requires_membership
 
     # -------------------------------------------------------------------------
     # Record Ownership

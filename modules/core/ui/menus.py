@@ -320,7 +320,7 @@ class OptionsMenu:
                     M("Event Log", c="admin", f="event"),
                     M("Error Tickets", c="admin", f="errors"),
                     M("Scheduler", c="admin", f="task"),
-                    M("Settings", c="admin", f="setting"),
+                    # M("Settings", c="admin", f="setting"),
                     M("Synchronization", c="sync", f="index")(
                         M("Settings", f="config", args=[1], m="update"),
                         M("Repositories", f="repository"),
@@ -1146,9 +1146,9 @@ class OptionsMenu:
         ADMIN = current.session.s3.system_roles.ADMIN
 
         return M(c="med")(
-                    M("Current Patients", f="patient")(
+                    M("Current Visits", f="patient")(
                         M("Create", m="create"),
-                        M("Former Patients", f="patient", vars={"closed": "only"}),
+                        M("Concluded Visits", f="patient", vars={"closed": "only"}),
                         ),
                     # M("Persons", f="person"),
                     M("Units", f="unit")(
@@ -1612,6 +1612,10 @@ class OptionsMenu:
         """ Water: Floods, etc """
 
         return M(c="water")(
+                    M("Wells", f="well")(
+                        M("Create", m="create"),
+                        M("Map", m="map"),
+                    ),
                     M("Gauges", f="gauge")(
                         M("Create", m="create"),
                         M("Map", m="map"),

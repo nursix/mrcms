@@ -369,6 +369,13 @@ class S3Config(Storage):
         else:
             s3.theme_styles = theme_path
 
+        # Path under static/themes/ for favicon.ico
+        iconpath = self.base.get("theme_favicon")
+        if iconpath:
+            s3.theme_favicon = path_to(iconpath.split("."))
+        else:
+            s3.theme_favicon = s3.theme_styles
+
         # Path under modules/templates/ for css.cfg
         config = self.base.get("theme_config")
         if config:
@@ -427,6 +434,19 @@ class S3Config(Storage):
             self.set_theme()
             styles = current.response.s3.theme_styles
         return styles
+
+    def get_theme_favicon(self):
+        """
+            The location of the shortcut icon:
+            - static/themes/[theme_favicon]/favicon.ico
+
+            => defaults to theme
+        """
+        iconpath = current.response.s3.theme_favicon
+        if not iconpath:
+            self.set_theme()
+            iconpath = current.response.s3.theme_favicon
+        return iconpath
 
     def get_theme_config(self):
         """
@@ -562,6 +582,28 @@ class S3Config(Storage):
                 - False         : do not log failed logins
         """
         return self.auth.get("log_failed_logins", False)
+
+    def get_auth_max_failed_logins(self):
+        """
+            Maximum number of tolerated failed login attempts to
+            a user account before the account is locked
+            - None meaning: no maximum
+        """
+        max_failed_logins = self.auth.get("max_failed_logins", None)
+        if isinstance(max_failed_logins, int) and max_failed_logins > 0:
+            return max_failed_logins
+        return None
+
+    def get_auth_failed_login_lock_timeout(self):
+        """
+            Timeout for the lock after an account has been locked due to
+            too many login attempts
+            - None meaning: locking is permanent, manual reset required
+        """
+        lock_timeout = self.auth.get("failed_login_lock_timeout", 300)
+        if isinstance(lock_timeout, int) and lock_timeout > 0:
+            return lock_timeout
+        return None
 
     def get_auth_password_changes(self):
         """
@@ -3340,6 +3382,15 @@ class S3Config(Storage):
                                                  "Date of Birth": "date_of_birth",
                                                  })
 
+    def get_doc_permitted_extensions(self):
+        """
+            Permitted file extensions for upload documents
+            - a string or compiled regex, or a list thereof
+            - e.g. ["pdf", "docx", "xlsx"]
+            - None (default) means all extensions allowed
+        """
+        return self.doc.get("permitted_extensions")
+
     # -------------------------------------------------------------------------
     # DVR Options
     #
@@ -4410,12 +4461,6 @@ class S3Config(Storage):
         """
         return self.inv.get("direct_stock_edits", False)
 
-    def get_inv_org_dependent_warehouse_types(self):
-        """
-            Whether Warehouse Types vary by Organisation
-        """
-        return self.inv.get("org_dependent_warehouse_types", False)
-
     def get_inv_send_show_mode_of_transport(self):
         """
             Show mode of transport on Sent Shipments
@@ -4508,12 +4553,6 @@ class S3Config(Storage):
 
     def get_inv_recv_shortname(self):
         return self.inv.get("recv_shortname", "GRN")
-
-    def get_inv_warehouse_code_unique(self):
-        """
-            Validate for Unique Warehouse Codes
-        """
-        return self.inv.get("warehouse_code_unique", False)
 
     # -------------------------------------------------------------------------
     # IRS

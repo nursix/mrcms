@@ -1,7 +1,7 @@
 """
-    Request Model
+    Needs+Requests Model
 
-    Copyright: 2009-2022 (c) Sahana Software Foundation
+    Copyright: 2009 (c) Sahana Software Foundation
 
     Permission is hereby granted, free of charge, to any person
     obtaining a copy of this software and associated documentation
@@ -25,31 +25,35 @@
     OTHER DEALINGS IN THE SOFTWARE.
 """
 
-__all__ = ("RequestModel",
-           "RequestApproverModel",
-           "RequestItemModel",
-           "RequestSkillModel",
-           "RequestRecurringModel",
+__all__ = (# --- Needs Assessments ---
            "RequestNeedsModel",
-           "RequestNeedsActivityModel",
-           "RequestNeedsContactModel",
-           "RequestNeedsDemographicsModel",
            "RequestNeedsItemsModel",
            "RequestNeedsSkillsModel",
-           "RequestNeedsOrganisationModel",
-           "RequestNeedsPersonModel",
-           "RequestNeedsSectorModel",
-           "RequestNeedsSiteModel",
+           "RequestNeedsServiceModel",
            "RequestNeedsTagModel",
+
+           "RequestNeedsActivityModel",
+
            "RequestOrderItemModel",
            "RequestProjectModel",
            "RequestTagModel",
            "RequestTaskModel",
            "RequestRequesterCategoryModel",
+
+           # --- Requisition Requests ---
+           "RequestModel",
+           "RequestApproverModel",
+           "RequestItemModel",
+           "RequestSkillModel",
+           "RequestRecurringModel",
+
+           # --- Commitments ---
            "CommitModel",
            "CommitItemModel",
            "CommitPersonModel",
            "CommitSkillModel",
+
+           # --- Utilities ---
            #"req_CheckMethod",
            "req_add_from_template",
            "req_approvers",
@@ -63,6 +67,8 @@ __all__ = ("RequestModel",
            "req_send_commit",
            "req_tabs",
            "req_update_status",
+
+           # --- Representation ---
            "req_RequesterRepresent",
            "req_ReqItemRepresent",
            )
@@ -77,33 +83,54 @@ from .pr import OU
 
 DEFAULT = "DEFAULT"
 
-REQ_STATUS_NONE     = 0
-REQ_STATUS_PARTIAL  = 1
-REQ_STATUS_COMPLETE = 2
-REQ_STATUS_CANCEL   = 3
+# =============================================================================
+# Needs priority
+#
+def need_priority_opts():
+    """ Options for needs priorities """
+
+    T = current.T
+    return (("PRIO1", T("Immediate")),
+            ("PRIO2", T("Urgent")),
+            ("PRIO3", T("Not Urgent")),
+            ("PRION", T("Plannable")),
+            )
+
+def need_priority():
+    """ Field template for needs priorities """
+
+    priority_opts = need_priority_opts()
+
+    represent = S3PriorityRepresent(priority_opts,
+                                    {"PRIO1": "red",
+                                     "PRIO2": "amber",
+                                     "PRIO3": "green",
+                                     "PRION": "blue",
+                                     }).represent
+
+    return FieldTemplate("priority",
+                         default = "PRIO3",
+                         label = current.T("Priority"),
+                         represent = represent,
+                         requires = IS_IN_SET(priority_opts),
+                         )
 
 # =============================================================================
+# Request priority
+#
 def req_priority_opts():
+    """ Options for request priority """
     T = current.T
     return {3: T("High"),
             2: T("Medium"),
             1: T("Low")
             }
 
-#def req_priority_represent(priority):
-#    """
-#        Represent request priority by a (color-coded) GIF image
-#        @ToDo: make CSS-only
-#    """
-
-#    src = URL(c = "static",
-#              f = "img",
-#              args = ["priority", "priority_%d.gif" % (priority or 4)],
-#              )
-#    return DIV(IMG(_src= src))
-
 def req_priority():
+    """ Field template for request priority """
+
     priority_opts = req_priority_opts()
+
     return FieldTemplate("priority", "integer",
                          default = 2,
                          label = current.T("Priority"),
@@ -114,20 +141,25 @@ def req_priority():
                          )
 
 # =============================================================================
+# Fulfillment status
+#
+REQ_STATUS_NONE     = 0
+REQ_STATUS_PARTIAL  = 1
+REQ_STATUS_COMPLETE = 2
+REQ_STATUS_CANCEL   = 3
+
 def req_status_opts():
+    """ Options for fulfillment status """
+
     T = current.T
-    return {REQ_STATUS_NONE:     SPAN(T("None"),
-                                      _class = "req_status_none",
-                                      ),
-            REQ_STATUS_PARTIAL:  SPAN(T("Partial"),
-                                      _class = "req_status_partial",
-                                      ),
-            REQ_STATUS_COMPLETE: SPAN(T("Complete"),
-                                      _class = "req_status_complete",
-                                      ),
+    return {REQ_STATUS_NONE: SPAN(T("None"), _class = "req_status_none"),
+            REQ_STATUS_PARTIAL: SPAN(T("Partial"), _class = "req_status_partial"),
+            REQ_STATUS_COMPLETE: SPAN(T("Complete"), _class = "req_status_complete"),
             }
 
 def req_status():
+    """ Field template for fulfillment status """
+
     status_opts = req_status_opts()
     return FieldTemplate("req_status", "integer",
                          label = current.T("Request Status"),
@@ -140,7 +172,11 @@ def req_status():
                          )
 
 # =============================================================================
+# Timeframe
+#
 def req_timeframe():
+    """ Options for request time frame """
+
     T = current.T
     timeframe_opts = {1: T("0-12 hours"),
                       2: T("12-24 hours"),
@@ -149,6 +185,7 @@ def req_timeframe():
                       5: T("5-7 days"),
                       6: T(">1 week"),
                       }
+
     return Field("timeframe", "integer",
                  default = 3,
                  label = T("Timeframe"),
@@ -159,10 +196,628 @@ def req_timeframe():
                  )
 
 # =============================================================================
+class RequestNeedsModel(DataModel):
+    """ Needs Assessments """
+
+    names = ("req_need_site_type",
+             "req_need",
+             "req_need_id",
+             )
+
+    def model(self):
+
+        T = current.T
+        db = current.db
+
+        define_table = self.define_table
+        configure = self.configure
+
+        # ---------------------------------------------------------------------
+        # Site types
+        #
+        tablename = "req_need_site_type"
+        define_table(tablename,
+                     Field("name", length=64,
+                           label = T("Type"),
+                           requires = [IS_NOT_EMPTY(), IS_LENGTH(64)],
+                           ),
+                     CommentsField(),
+                     )
+
+        # Table configuration
+        configure(tablename,
+                  deduplicate = S3Duplicate(),
+                  )
+
+        site_type_represent = S3Represent(lookup=tablename)
+
+        # ---------------------------------------------------------------------
+        # Needs Assessment
+        #
+        tablename = "req_need"
+        define_table(tablename,
+                     self.super_link("doc_id", "doc_entity"),
+                     # Reference
+                     Field("refno", length=16,
+                           label = T("Ref.No."),
+                           writable = False, # autogenerated onaccept
+                           ),
+                     # Origin of Assessment
+                     self.org_organisation_id(
+                        "contact_organisation_id",
+                        label = T("Reporting Organization"),
+                        # Enable in template if required:
+                        readable = False,
+                        writable = False,
+                        ),
+                     Field("contact_name",
+                           length = 128,
+                           label = T("Contact Person"),
+                           requires = IS_LENGTH(128),
+                           represent = lambda v, row=None: v if v else "-",
+                           ),
+                     Field("contact_phone",
+                           length = 64,
+                           label = T("Phone #"),
+                           requires = IS_EMPTY_OR(IS_PHONE_NUMBER_SINGLE()),
+                           represent = lambda v, row=None: v if v else "-",
+                           ),
+                     # Context
+                     # TODO event_id (for multi-event management)
+                     Field("site_name",
+                           length = 128,
+                           label = T("Site Name"),
+                           requires = [IS_NOT_EMPTY(),
+                                       IS_LENGTH(128),
+                                       ],
+                           represent = lambda v, row=None: v if v else "-",
+                           ),
+                     Field("site_type_id", "reference req_need_site_type",
+                           label = T("Site Type"),
+                           ondelete = "RESTRICT",
+                           represent = site_type_represent,
+                           requires = IS_EMPTY_OR(
+                                        IS_ONE_OF(db, "req_need_site_type.id",
+                                                  site_type_represent,
+                                                  )),
+                           ),
+                     self.gis_location_id(),
+
+                     # Details
+                     DateTimeField(default="now"),
+                     Field("name",
+                           length = 128,
+                           label = T("Title"),
+                           requires = IS_LENGTH(128),
+                           ),
+                     CommentsField("description",
+                                   label = T("Situation Summary"),
+                                   comment = None,
+                                   ),
+
+                     # Management
+                     self.org_organisation_id(
+                        label = T("Responding Organization"),
+                        comment = None,
+                        ),
+                     # TODO site_id (default site for item deliveries)
+                     Field("verified", "boolean",
+                           default = False,
+                           label = T("Verified"),
+                           # Enable in template if required:
+                           readable = False,
+                           writable = False,
+                           ),
+                     need_priority()(),
+                     req_status()("status",
+                                  label = T("Fulfilment Status"),
+                                  default = REQ_STATUS_NONE,
+                                  ),
+                     DateTimeField("end_date",
+                                   label = T("End Date"),
+                                   # Enable in Templates if-required
+                                   readable = False,
+                                   writable = False,
+                                   ),
+
+                     CommentsField(),
+                     )
+
+        # Components
+        self.add_components(tablename,
+                            event_event = {"link": "event_event_need",
+                                            "joinby": "need_id",
+                                            "key": "event_id",
+                                            "multiple": False,
+                                            },
+                            project_activity = {"link": "req_need_activity",
+                                                "joinby": "need_id",
+                                                "key": "activity_id",
+                                                },
+                            req_need_item = "need_id",
+                            req_need_skill = "need_id",
+                            req_need_service = "need_id",
+                            req_need_tag = {"name": "tag",
+                                            "joinby": "need_id",
+                                            },
+                            )
+
+        # Table configuration
+        configure(tablename,
+                  super_entity = "doc_entity",
+                  onaccept = self.need_onaccept,
+                  )
+
+        # CRUD strings
+        current.response.s3.crud_strings[tablename] = Storage(
+            label_create = T("Create Assessment"),
+            title_list = T("Needs Assessments"),
+            title_display = T("Needs Assessment"),
+            title_update = T("Edit Assessment"),
+            title_upload = T("Import Assessments"),
+            label_list_button = T("List Assessments"),
+            label_delete_button = T("Delete Assessment"),
+            msg_record_created = T("Needs Assessment added"),
+            msg_record_modified = T("Needs Assessment updated"),
+            msg_record_deleted = T("Needs Assessment deleted"),
+            msg_list_empty = T("No Needs Assessments currently registered"),
+            )
+
+        # Foreign key template
+        represent = S3Represent(lookup=tablename, show_link=True)
+        need_id = FieldTemplate("need_id", "reference %s" % tablename,
+                                label = T("Assessment"),
+                                ondelete = "CASCADE",
+                                represent = represent,
+                                requires = IS_EMPTY_OR(
+                                                IS_ONE_OF(db, "req_need.id",
+                                                          represent,
+                                                          orderby = "req_need.date",
+                                                          sort = True,
+                                                          )),
+                                sortby = "date",
+                                )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        return {"req_need_id": need_id,
+                }
+
+    # -------------------------------------------------------------------------
+    def defaults(self):
+        """
+            Safe defaults for model-global names in case module is disabled
+        """
+
+        return {"req_need_id": FieldTemplate.dummy("need_id"),
+                }
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def need_onaccept(form):
+        """
+            Onaccept-routine for needs assessments
+                - generate reference number
+
+            Args:
+                form - the FORM
+        """
+
+        record_id = get_form_record_id(form)
+        if not record_id:
+            return
+
+        table = current.s3db.req_need
+        query = (table.id == record_id)
+        record = current.db(query).select(table.id,
+                                          table.refno,
+                                          limitby = (0, 1),
+                                          ).first()
+        if not record:
+            return
+
+        update = {}
+        if not record.refno:
+            # Generate reference number
+            update["refno"] = "NE%05d" % record.id
+
+        if update:
+            update["modified_by"] = table.modified_by
+            update["modified_on"] = table.modified_on
+            record.update_record(**update)
+
+# =============================================================================
+class RequestNeedsItemsModel(DataModel):
+    """ Model for Supplies Needed (Needs Assessment) """
+
+    names = ("req_need_item",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Needs <=> Supply Items
+        #
+
+        tablename = "req_need_item"
+        self.define_table(tablename,
+                          self.req_need_id(empty = False),
+                          self.supply_item_category_id(),
+                          self.supply_item_id(empty = False,
+                                              # Default:
+                                              #ondelete = "RESTRICT",
+                                              # Filter Item dropdown based on Category
+                                              script = '''
+$.filterOptionsS3({
+ 'trigger':'item_category_id',
+ 'target':'item_id',
+ 'lookupPrefix':'supply',
+ 'lookupResource':'item',
+})''',
+                                              # Don't use Auto-complete
+                                              widget = None,
+                                              ),
+                          self.supply_item_pack_id(),
+                          req_timeframe(),
+                          Field("quantity", "double",
+                                label = T("Quantity"),
+                                #label = T("Quantity Requested"),
+                                represent = lambda v: \
+                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
+                                requires = IS_EMPTY_OR(
+                                            IS_FLOAT_AMOUNT(minimum=1.0)),
+                                ),
+                          Field("quantity_committed", "double",
+                                label = T("Quantity Committed"),
+                                represent = lambda v: \
+                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
+                                requires = IS_EMPTY_OR(
+                                            IS_FLOAT_AMOUNT(minimum=1.0)),
+                                # Enable in templates as-required
+                                readable = False,
+                                # Normally set automatically
+                                writable = False,
+                                ),
+                          Field("quantity_uncommitted", "double",
+                                label = T("Quantity Uncommitted"),
+                                represent = lambda v: \
+                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
+                                requires = IS_EMPTY_OR(
+                                            IS_FLOAT_AMOUNT(minimum=1.0)),
+                                # Enable in templates as-required
+                                readable = False,
+                                # Normally set automatically
+                                writable = False,
+                                ),
+                          Field("quantity_delivered", "double",
+                                label = T("Quantity Delivered"),
+                                represent = lambda v: \
+                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
+                                requires = IS_EMPTY_OR(
+                                            IS_FLOAT_AMOUNT(minimum=1.0)),
+                                # Enable in templates as-required
+                                readable = False,
+                                # Normally set automatically
+                                writable = False,
+                                ),
+                          req_priority()(),
+                          CommentsField(),
+                          req_status()("status",
+                                       label = T("Fulfilment Status"),
+                                       ),
+                          )
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary=("need_id",
+                                                          "item_id",
+                                                          ),
+                                                 ),
+                       )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return None
+
+# =============================================================================
+class RequestNeedsSkillsModel(DataModel):
+    """ Model for Skills Needed (Needs Assessment) """
+
+    names = ("req_need_skill",
+             #"req_need_skill_person",
+             )
+
+    def model(self):
+
+        T = current.T
+        crud_strings = current.response.s3.crud_strings
+
+        # ---------------------------------------------------------------------
+        # Needs <=> Skills
+        #
+        tablename = "req_need_skill"
+        self.define_table(tablename,
+                          self.req_need_id(empty = False),
+                          self.hrm_skill_id(empty = False),
+                          Field("quantity", "double",
+                                label = T("Quantity"),
+                                represent = lambda v: \
+                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
+                                requires = IS_EMPTY_OR(
+                                            IS_FLOAT_AMOUNT(minimum=1.0)),
+                                ),
+                          req_priority()(),
+                          CommentsField(),
+                          req_status()("status",
+                                       label = T("Fulfilment Status"),
+                                       ),
+                          )
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary=("need_id",
+                                                          "skill_id",
+                                                          ),
+                                                 ),
+                       )
+
+        # CRUD strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Skill"),
+            title_list = T("Skills"),
+            title_display = T("Skill"),
+            title_update = T("Edit Skill"),
+            #title_upload = T("Import Skills"),
+            label_list_button = T("List Skills"),
+            label_delete_button = T("Delete Skill"),
+            msg_record_created = T("Skill added"),
+            msg_record_modified = T("Skill updated"),
+            msg_record_deleted = T("Skill deleted"),
+            msg_list_empty = T("No Skills currently registered for this Request"),
+            )
+
+        # ---------------------------------------------------------------------
+        # TODO req_need_skill_person: Person assigned to specific skill requirement
+        #
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return None
+
+# =============================================================================
+class RequestNeedsServiceModel(DataModel):
+    """ Model for Services Needed (Needs Assessment) """
+
+    names = ("req_need_service",
+             "req_need_service_team",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        task_status = WorkflowOptions(("new", T("New"), "blue"),
+                                      ("assigned", T("Assigned"), "amber"),
+                                      ("progress", T("In Progress"), "amber"),
+                                      ("complete", T("Completed"), "green"),
+                                      ("aborted", T("Aborted"), "red"),
+                                      ("blocked", T("Not Actionable"), "red"),
+                                      ("obsolete", T("Obsolete"), "grey"),
+                                      none = "new",
+                                      )
+
+        # ---------------------------------------------------------------------
+        # Services required
+        #
+        tablename = "req_need_service"
+        self.define_table(tablename,
+                          self.req_need_id(
+                              empty = False,
+                              writable = False,
+                              # TODO alternative representation of need_id to include
+                              #      location name + type as well as title
+                              ),
+                          # TODO date field
+                          # TODO location_id
+                          need_priority()(),
+                          self.org_service_id(
+                              empty = False,
+                              label = T("Type of Service Required"),
+                              ),
+                          CommentsField("details",
+                                        label = T("Details"),
+                                        ),
+                          Field("status",
+                                label = T("Status"),
+                                default = "new",
+                                requires = IS_IN_SET(task_status.selectable(),
+                                                     zero = None,
+                                                     sort = False,
+                                                     ),
+                                represent = task_status.represent,
+                                ),
+                          # TODO status history
+                          CommentsField(),
+                          )
+
+        # List fields (for needs assessment tab)
+        list_fields = ["priority",
+                       "service_id",
+                       "details",
+                       "status",
+                       ]
+
+        # TODO onaccept to update need status, and track changes
+        self.configure(tablename,
+                       list_fields = list_fields,
+                       deduplicate = S3Duplicate(primary=("need_id",
+                                                          "service_id",
+                                                          ),
+                                                 ),
+                       )
+
+        # TODO CRUD Strings
+        # TODO rheader including assignments and actions performed
+
+        # ---------------------------------------------------------------------
+        # Team assigned to specific requirement
+        #
+        tablename = "req_need_service_team"
+        self.define_table(tablename,
+                          Field("need_service_id", "reference req_need_service",
+                                # TODO requires
+                                # TODO represent
+                                ),
+                          self.pr_group_id(
+                              # TODO filter to teams
+                              ),
+                          CommentsField("task",
+                                        label = T("Task"),
+                                        ),
+                          Field("status",
+                                label = T("Status"),
+                                # TODO requires
+                                # TODO represent
+                                ),
+                          CommentsField(), # TODO use for feedback
+                          )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return None
+
+# =============================================================================
+class RequestNeedsActivityModel(DataModel):
+    """
+        Simple Requests Management System
+        - optional link to Activities (Activity created to respond to Need)
+    """
+
+    names = ("req_need_activity",
+             )
+
+    def model(self):
+
+        # ---------------------------------------------------------------------
+        # Needs <=> Activities
+        #
+
+        tablename = "req_need_activity"
+        self.define_table(tablename,
+                          self.req_need_id(empty = False),
+                          self.project_activity_id(empty = False),
+                          CommentsField(),
+                          )
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary=("need_id",
+                                                          "activity_id",
+                                                          ),
+                                                 ),
+                       )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return None
+
+# =============================================================================
+class RequestNeedsContactModel(DataModel):
+    """
+        Simple Requests Management System
+        - optional link to Contacts (People)
+    """
+
+    names = ("req_need_contact",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Needs <=> Persons
+        #
+
+        tablename = "req_need_contact"
+        self.define_table(tablename,
+                          self.req_need_id(empty = False),
+                          self.pr_person_id(empty = False,
+                                            label = T("Contact"),
+                                            ),
+                          CommentsField(),
+                          )
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary=("need_id",
+                                                          "person_id",
+                                                          ),
+                                                 ),
+                       )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return None
+
+# =============================================================================
+class RequestNeedsTagModel(DataModel):
+    """ Needs Tags """
+
+    names = ("req_need_tag",
+             )
+
+    def model(self):
+
+        T = current.T
+
+        # ---------------------------------------------------------------------
+        # Need Tags
+        # - Key-Value extensions
+        # - can be used to add structured extensions, such as:
+        #   * Reference
+        #   * Cash Donations accepted (/ Details)
+        #   * Goods drop-off point (/ Details)
+        #   * Transport required (/ Details)
+        #   * Security needed (/ Details)
+        #   * Volunteering Opportunities (/ Details)
+        # - can be used to provide conversions to external systems, such as:
+        #   * HXL
+        # - can be a Triple Store for Semantic Web support
+        #
+        tablename = "req_need_tag"
+        self.define_table(tablename,
+                          self.req_need_id(),
+                          # key is a reserved word in MySQL
+                          Field("tag",
+                                label = T("Key"),
+                                ),
+                          Field("value",
+                                label = T("Value"),
+                                ),
+                          CommentsField(),
+                          )
+
+        self.configure(tablename,
+                       deduplicate = S3Duplicate(primary = ("need_id",
+                                                            "tag",
+                                                            ),
+                                                 ),
+                       )
+
+        # ---------------------------------------------------------------------
+        # Pass names back to global scope (s3.*)
+        #
+        # return None
+
+# =============================================================================
 class RequestModel(DataModel):
-    """
-        Model for Requests
-    """
+    """ Model for Requisition Requests """
 
     names = ("req_req",
              "req_req_id",
@@ -1059,6 +1714,7 @@ class RequestModel(DataModel):
                            ]
         else:
             # Not Supported - redirect to normal PDF
+            pdf_componentname = list_fields = None
             redirect(URL(args = current.request.args[0],
                          extension = "pdf"))
 
@@ -1159,7 +1815,7 @@ class RequestModel(DataModel):
         send_email = current.msg.send_by_pe_id
         subject_T = T("Request submitted for Approval")
         message_T = T("A new Request, %(reference)s, has been submitted for Approval by %(person)s for delivery to %(site)s by %(date_required)s. Please review at: %(url)s")
-        for language in languages:
+        for language, users in languages.items():
             T.force(language)
             session_s3.language = language # for date_represent
             subject = "%s: %s" % (s3_str(subject_T), req_ref)
@@ -1169,7 +1825,6 @@ class RequestModel(DataModel):
                                            "site": site_name,
                                            "url": url,
                                            }
-            users = languages[language]
             for pe_id in users:
                 send_email(pe_id,
                            subject = subject,
@@ -1288,12 +1943,13 @@ class RequestModel(DataModel):
 
             # Lookup Names & PE IDs
             sites = {}
-            for instance_type in sites_by_type:
-                itable = s3db.table(instance_type)
-                instances = db(itable.site_id.belongs(sites_by_type[instance_type])).select(itable.name,
-                                                                                            itable.pe_id,
-                                                                                            itable.site_id,
-                                                                                            )
+            for itype, itype_site_ids in sites_by_type.items():
+                itable = s3db.table(itype)
+                instances = db(itable.site_id.belongs(itype_site_ids)).select(
+                                        itable.name,
+                                        itable.pe_id,
+                                        itable.site_id,
+                                        )
                 for row in instances:
                     sites[row.site_id] = {"name": row.name,
                                           "pe_id": row.pe_id,
@@ -1325,9 +1981,8 @@ class RequestModel(DataModel):
                                                           rtable.pe_id,
                                                           )
 
-            for site_id in sites:
+            for site in sites.values():
 
-                site = sites[site_id]
                 site_name = site["name"]
                 pe_id = site["pe_id"]
 
@@ -1409,7 +2064,7 @@ class RequestModel(DataModel):
                     if language not in languages:
                         languages[language] = []
                     languages[language].append(row["pr_person_user.pe_id"])
-                for language in languages:
+                for language, users in languages.items():
                     T.force(language)
                     session_s3.language = language # for date_represent
                     subject = "%s: %s" % (s3_str(subject_T), req_ref)
@@ -1418,7 +2073,6 @@ class RequestModel(DataModel):
                                                    "site": site_name,
                                                    "url": url,
                                                    }
-                    users = languages[language]
                     for pe_id in users:
                         send_email(pe_id,
                                    subject = subject,
@@ -1733,7 +2387,7 @@ class RequestApproverModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
 # =============================================================================
 class RequestItemModel(DataModel):
@@ -2472,746 +3126,7 @@ class RequestRecurringModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
-
-# =============================================================================
-class RequestNeedsModel(DataModel):
-    """
-        Simple Requests Management System
-        - Starts as Simple free text Needs
-        - Extensible via Key-Value Tags
-        - Extensible with Items
-        - Extensible with Skills
-        Use cases:
-        - SHARE: local governments express needs to be met by NGOs (/Private Sector/Public in future)
-        - Organisations can request Money or Time from remote volunteers
-        - Sites can request Time from local volunteers or accept drop-off for Goods
-        - Projects can request x (tbc: MapPH usecase)
-    """
-
-    names = ("req_need",
-             "req_need_id",
-             )
-
-    def model(self):
-
-        T = current.T
-        db = current.db
-
-        # ---------------------------------------------------------------------
-        # Needs
-        #
-        tablename = "req_need"
-        self.define_table(tablename,
-                          self.super_link("doc_id", "doc_entity"),
-                          self.gis_location_id(), # Can be hidden, e.g. if using Sites (can then sync this onaccept)
-                          DateTimeField(default = "now",
-                                        widget = "date",
-                                        ),
-                          DateTimeField("end_date",
-                                        label = T("End Date"),
-                                        # Enable in Templates if-required
-                                        readable = False,
-                                        writable = False,
-                                        ),
-                          req_priority()(),
-                          Field("name", notnull = True,
-                                length = 64,
-                                label = T("Summary of Needs"),
-                                requires = [IS_NOT_EMPTY(),
-                                            IS_LENGTH(64),
-                                            ],
-                                ),
-                          CommentsField("description",
-                                        label = T("Description"),
-                                        comment = None,
-                                        ),
-                          req_status()("status",
-                                       label = T("Fulfilment Status"),
-                                       ),
-                          CommentsField(),
-                          )
-
-        # CRUD strings
-        current.response.s3.crud_strings[tablename] = Storage(
-            label_create = T("Add Needs"),
-            title_list = T("Needs"),
-            title_display = T("Needs"),
-            title_update = T("Edit Needs"),
-            title_upload = T("Import Needs"),
-            label_list_button = T("List Needs"),
-            label_delete_button = T("Delete Needs"),
-            msg_record_created = T("Needs added"),
-            msg_record_modified = T("Needs updated"),
-            msg_record_deleted = T("Needs deleted"),
-            msg_list_empty = T("No Needs currently registered"),
-            )
-
-        self.configure(tablename,
-                       super_entity = "doc_entity",
-                       )
-
-        # Components
-        self.add_components(tablename,
-                            event_event = {"link": "event_event_need",
-                                            "joinby": "need_id",
-                                            "key": "event_id",
-                                            "multiple": False,
-                                            },
-                            org_organisation = {"link": "req_need_organisation",
-                                                "joinby": "need_id",
-                                                "key": "organisation_id",
-                                                "multiple": False,
-                                                },
-                            req_need_organisation = {"joinby": "need_id",
-                                                     "multiple": False,
-                                                     },
-                            org_sector = {"link": "req_need_sector",
-                                          "joinby": "need_id",
-                                          "key": "sector_id",
-                                          "multiple": False,
-                                          },
-                            org_site = {"link": "req_need_site",
-                                        "joinby": "need_id",
-                                        "key": "site_id",
-                                        "multiple": False,
-                                        },
-                            project_activity = {"link": "req_need_activity",
-                                                "joinby": "need_id",
-                                                "key": "activity_id",
-                                                },
-                            req_need_contact = {"joinby": "need_id",
-                                                # Can redefine as multiple=True in template if-required
-                                                "multiple": False,
-                                                },
-                            req_need_demographic = "need_id",
-                            req_need_item = "need_id",
-                            req_need_person = "need_id",
-                            req_need_skill = "need_id",
-                            req_need_tag = {"name": "tag",
-                                            "joinby": "need_id",
-                                            },
-                            )
-
-        # Custom Methods
-        self.set_method("req_need",
-                        method = "assign",
-                        action = self.pr_AssignMethod(component="need_person"))
-
-        # NB Only instance of this being used (SHARE) over-rides this to show the req_number
-        represent = S3Represent(lookup = tablename,
-                                show_link = True,
-                                )
-        need_id = FieldTemplate("need_id", "reference %s" % tablename,
-                                label = T("Need"),
-                                ondelete = "CASCADE",
-                                represent = represent,
-                                requires = IS_EMPTY_OR(
-                                                IS_ONE_OF(db, "req_need.id",
-                                                          represent,
-                                                          orderby = "req_need.date",
-                                                          sort = True,
-                                                          )),
-                                sortby = "date",
-                                )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return {"req_need_id": need_id,
-                }
-
-    # -------------------------------------------------------------------------
-    def defaults(self):
-        """
-            Safe defaults for model-global names in case module is disabled
-        """
-
-        return {"req_need_id": FieldTemplate.dummy("need_id"),
-                }
-
-# =============================================================================
-class RequestNeedsActivityModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to Activities (Activity created to respond to Need)
-    """
-
-    names = ("req_need_activity",
-             )
-
-    def model(self):
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Activities
-        #
-
-        tablename = "req_need_activity"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          self.project_activity_id(empty = False),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "activity_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsContactModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to Contacts (People)
-    """
-
-    names = ("req_need_contact",
-             )
-
-    def model(self):
-
-        T = current.T
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Persons
-        #
-
-        tablename = "req_need_contact"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          self.pr_person_id(empty = False,
-                                            label = T("Contact"),
-                                            ),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "person_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsDemographicsModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to Demographics
-
-        @ToDo: Auto-populate defaults for Items based on Demographics
-    """
-
-    names = ("req_need_demographic",
-             )
-
-    def model(self):
-
-        T = current.T
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Demographics
-        #
-        if current.s3db.table("stats_demographic"):
-            title = current.response.s3.crud_strings["stats_demographic"].label_create
-            parameter_id_comment = PopupLink(c = "stats",
-                                             f = "demographic",
-                                             vars = {"child": "parameter_id"},
-                                             title = title,
-                                             )
-        else:
-            parameter_id_comment = None
-
-        tablename = "req_need_demographic"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          self.super_link("parameter_id", "stats_parameter",
-                                          instance_types = ("stats_demographic",),
-                                          label = T("Demographic"),
-                                          represent = self.stats_parameter_represent,
-                                          readable = True,
-                                          writable = True,
-                                          empty = False,
-                                          comment = parameter_id_comment,
-                                          ),
-                          req_timeframe(),
-                          Field("value", "double",
-                                label = T("Number"),
-                                #label = T("Number in Need"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_NOT_EMPTY(),
-                                ),
-                          Field("value_committed", "double",
-                                label = T("Number Committed"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                # Enable in templates as-required
-                                readable = False,
-                                # Normally set automatically
-                                writable = False,
-                                ),
-                          Field("value_uncommitted", "double",
-                                label = T("Number Uncommitted"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                # Enable in templates as-required
-                                readable = False,
-                                # Normally set automatically
-                                writable = False,
-                                ),
-                          Field("value_reached", "double",
-                                label = T("Number Reached"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                # Enable in templates as-required
-                                readable = False,
-                                # Normally set automatically
-                                writable = False,
-                                ),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "parameter_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsItemsModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional extension to support Items, but still not using Inventory-linked Requests
-    """
-
-    names = ("req_need_item",
-             )
-
-    def model(self):
-
-        T = current.T
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Supply Items
-        #
-
-        tablename = "req_need_item"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          self.supply_item_category_id(),
-                          self.supply_item_id(empty = False,
-                                              # Default:
-                                              #ondelete = "RESTRICT",
-                                              # Filter Item dropdown based on Category
-                                              script = '''
-$.filterOptionsS3({
- 'trigger':'item_category_id',
- 'target':'item_id',
- 'lookupPrefix':'supply',
- 'lookupResource':'item',
-})''',
-                                              # Don't use Auto-complete
-                                              widget = None,
-                                              ),
-                          self.supply_item_pack_id(),
-                          req_timeframe(),
-                          Field("quantity", "double",
-                                label = T("Quantity"),
-                                #label = T("Quantity Requested"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                ),
-                          Field("quantity_committed", "double",
-                                label = T("Quantity Committed"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                # Enable in templates as-required
-                                readable = False,
-                                # Normally set automatically
-                                writable = False,
-                                ),
-                          Field("quantity_uncommitted", "double",
-                                label = T("Quantity Uncommitted"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                # Enable in templates as-required
-                                readable = False,
-                                # Normally set automatically
-                                writable = False,
-                                ),
-                          Field("quantity_delivered", "double",
-                                label = T("Quantity Delivered"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                # Enable in templates as-required
-                                readable = False,
-                                # Normally set automatically
-                                writable = False,
-                                ),
-                          req_priority()(),
-                          CommentsField(),
-                          req_status()("status",
-                                       label = T("Fulfilment Status"),
-                                       ),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "item_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsSkillsModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional extension to support Skills, but still not using normal Requests
-    """
-
-    names = ("req_need_skill",
-             )
-
-    def model(self):
-
-        T = current.T
-        crud_strings = current.response.s3.crud_strings
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Skills
-        #
-        skill_id = self.hrm_skill_id # Load normal model
-        CREATE_SKILL = crud_strings["hrm_skill"].label_create
-
-        tablename = "req_need_skill"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          skill_id(comment = PopupLink(c = "hrm",
-                                                       f = "skill",
-                                                       label = CREATE_SKILL,
-                                                       tooltip = None,
-                                                       vars = {"prefix": "req"},
-                                                       ),
-                                   empty = False,
-                                   ),
-                          Field("quantity", "double",
-                                label = T("Quantity"),
-                                represent = lambda v: \
-                                    IS_FLOAT_AMOUNT.represent(v, precision=2),
-                                requires = IS_EMPTY_OR(
-                                            IS_FLOAT_AMOUNT(minimum=1.0)),
-                                ),
-                          req_priority()(),
-                          CommentsField(),
-                          req_status()("status",
-                                       label = T("Fulfilment Status"),
-                                       ),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "skill_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # CRUD strings
-        crud_strings[tablename] = Storage(
-            label_create = T("Add Skill"),
-            title_list = T("Skills"),
-            title_display = T("Skill"),
-            title_update = T("Edit Skill"),
-            #title_upload = T("Import Skills"),
-            label_list_button = T("List Skills"),
-            label_delete_button = T("Delete Skill"),
-            msg_record_created = T("Skill added"),
-            msg_record_modified = T("Skill updated"),
-            msg_record_deleted = T("Skill deleted"),
-            msg_list_empty = T("No Skills currently registered for this Request"),
-            )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsOrganisationModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to Organisations
-        - link exposed in Templates as-required
-    """
-
-    names = ("req_need_organisation",
-             )
-
-    def model(self):
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Organisations
-        #
-        organisation_id = self.org_organisation_id # Load normal model
-        CREATE = current.response.s3.crud_strings["org_organisation"].label_create
-
-        tablename = "req_need_organisation"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          organisation_id(comment = PopupLink(c = "org",
-                                                              f = "organisation",
-                                                              label = CREATE,
-                                                              tooltip = None,
-                                                              vars = {"prefix": "req"},
-                                                              ),
-                                          empty = False,
-                                          ),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "organisation_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsPersonModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to People (used for assignments to Skills)
-        - currently assumes that Need just has a single Skill, so no need to say which skill the person is for
-        - used by CCC
-    """
-
-    names = ("req_need_person",
-             )
-
-    def model(self):
-
-        T = current.T
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Persons
-        #
-        # @ToDo: configuration setting once-required
-        status_opts = {1: T("Applied"),
-                       2: T("Approved"),
-                       3: T("Rejected"),
-                       4: T("Invited"),
-                       5: T("Accepted"),
-                       6: T("Declined"),
-                       }
-
-        tablename = "req_need_person"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          self.pr_person_id(empty = False),
-                          Field("status", "integer",
-                                default = 4, # Invited
-                                label = T("Status"),
-                                represent = represent_option(status_opts),
-                                requires = IS_EMPTY_OR(
-                                            IS_IN_SET(status_opts)),
-                                ),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "person_id",
-                                                          ),
-                                                 ),
-                       )
-
-        current.response.s3.crud_strings[tablename] = Storage(
-            label_create = T("Add Person"),
-            title_display = T("Person Details"),
-            title_list = T("People"),
-            title_update = T("Edit Person"),
-            #title_upload = T("Import People"),
-            label_list_button = T("List People"),
-            label_delete_button = T("Remove Person"),
-            msg_record_created = T("Person added"),
-            msg_record_modified = T("Person updated"),
-            msg_record_deleted = T("Person removed"),
-            msg_list_empty = T("No People currently linked to this Need")
-        )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsSectorModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to Sectors
-        - link exposed in Templates as-required
-    """
-
-    names = ("req_need_sector",
-             )
-
-    def model(self):
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Sectors
-        #
-        tablename = "req_need_sector"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          self.org_sector_id(empty = False),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "sector_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsSiteModel(DataModel):
-    """
-        Simple Requests Management System
-        - optional link to Sites
-        - link exposed in Templates as-required
-    """
-
-    names = ("req_need_site",
-             )
-
-    def model(self):
-
-        # ---------------------------------------------------------------------
-        # Needs <=> Sites
-        #
-        SITE = current.deployment_settings.get_org_site_label()
-
-        tablename = "req_need_site"
-        self.define_table(tablename,
-                          self.req_need_id(empty = False),
-                          # Component not instance
-                          self.super_link("site_id", "org_site",
-                                          label = SITE,
-                                          readable = True,
-                                          writable = True,
-                                          represent = self.org_site_represent,
-                                          ),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary=("need_id",
-                                                          "site_id",
-                                                          ),
-                                                 ),
-                       )
-
-        # ---------------------------------------------------------------------
-        # Pass names back to global scope (s3.*)
-        #
-        return None
-
-# =============================================================================
-class RequestNeedsTagModel(DataModel):
-    """
-        Needs Tags
-    """
-
-    names = ("req_need_tag",
-             )
-
-    def model(self):
-
-        T = current.T
-
-        # ---------------------------------------------------------------------
-        # Need Tags
-        # - Key-Value extensions
-        # - can be used to add structured extensions, such as:
-        #   * Reference
-        #   * Cash Donations accepted (/ Details)
-        #   * Goods drop-off point (/ Details)
-        #   * Transport required (/ Details)
-        #   * Security needed (/ Details)
-        #   * Volunteering Opportunities (/ Details)
-        # - can be used to provide conversions to external systems, such as:
-        #   * HXL
-        # - can be a Triple Store for Semantic Web support
-        #
-        tablename = "req_need_tag"
-        self.define_table(tablename,
-                          self.req_need_id(),
-                          # key is a reserved word in MySQL
-                          Field("tag",
-                                label = T("Key"),
-                                ),
-                          Field("value",
-                                label = T("Value"),
-                                ),
-                          CommentsField(),
-                          )
-
-        self.configure(tablename,
-                       deduplicate = S3Duplicate(primary = ("need_id",
-                                                            "tag",
-                                                            ),
-                                                 ),
-                       )
-
-        # Pass names back to global scope (s3.*)
-        return None
+        # return None
 
 # =============================================================================
 class RequestTagModel(DataModel):
@@ -3253,8 +3168,10 @@ class RequestTagModel(DataModel):
                                                  ),
                        )
 
+        # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
-        return None
+        #
+        # return None
 
 # =============================================================================
 class RequestOrderItemModel(DataModel):
@@ -3325,7 +3242,7 @@ class RequestOrderItemModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
 # =============================================================================
 class RequestProjectModel(DataModel):
@@ -3357,7 +3274,7 @@ class RequestProjectModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
 # =============================================================================
 class RequestTaskModel(DataModel):
@@ -3391,7 +3308,7 @@ class RequestTaskModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
 # =============================================================================
 class RequestRequesterCategoryModel(DataModel):
@@ -3430,7 +3347,7 @@ class RequestRequesterCategoryModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
 # =============================================================================
 class CommitModel(DataModel):
@@ -3933,7 +3850,7 @@ class CommitPersonModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -4018,7 +3935,7 @@ class CommitSkillModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
+        # return None
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -4557,11 +4474,14 @@ def req_rheader(r, check_page=False):
             # Hide these if no Items/Skills on one of these requests yet
             auth = current.auth
             user = auth.user
-            organisation_id = user.organisation_id if user else None
+            if user:
+                organisation_id = user.organisation_id
+                user_site_id = user.site_id
+            else:
+                organisation_id = user_site_id = None
 
             req_id = record.id
             if items:
-                user_site_id = user.site_id if user else None
                 ritable = s3db.req_req_item
                 possibly_complete = db(ritable.req_id == req_id).select(ritable.id,
                                                                         limitby = (0, 1)
@@ -5286,13 +5206,13 @@ class req_CheckMethod(CRUDMethod):
                     if quantity_outstanding:
                         len_skills = len(skills)
                         matches = []
-                        for p in people:
+                        for hr_id, skill_ids in people.items():
                             smatches = 0
                             for s in skills:
-                                if s in people[p]:
+                                if s in skill_ids:
                                     smatches += 1
                             if smatches == len_skills:
-                                matches.append(p)
+                                matches.append(hr_id)
                         org_quantity = len(matches)
                         if org_quantity != 0:
                             no_match = False
