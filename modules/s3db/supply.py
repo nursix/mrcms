@@ -215,6 +215,7 @@ class SupplyCatalogModel(DataModel):
                            "reference supply_item_category",
                            label = T("Parent Category"),
                            ondelete = "RESTRICT",
+                           requires = IS_EMPTY_OR(IS_IN_DB(db, "%s.id" % tablename)),
                            represent = parent_represent,
                            readable = category_hierarchy,
                            writable = category_hierarchy,
@@ -1079,7 +1080,7 @@ $.filterOptionsS3({
         query = (citable.item_id == item_id) & \
                 (citable.deleted == False)
         rows = db(query).select(citable.id)
-        if not len(rows):
+        if not rows:
             # Create new catalog item
             catalog_item = {"catalog_id": catalog_id,
                             "item_category_id": item_category_id,
@@ -1565,13 +1566,7 @@ class SupplyItemAlternativesModel(DataModel):
         # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
         #
-        return None
-
-    # -------------------------------------------------------------------------
-    def defaults(self):
-        """ Return safe defaults for names in case the model is disabled """
-
-        return None
+        #return {}
 
 # =============================================================================
 class SupplyItemBrandModel(DataModel):
@@ -1756,8 +1751,10 @@ class SupplyPersonModel(DataModel):
                                                  ),
                        )
 
+        # ---------------------------------------------------------------------
         # Pass names back to global scope (s3.*)
-        return None
+        #
+        #return {}
 
 # =============================================================================
 class SupplyDistributionModel(DataModel):

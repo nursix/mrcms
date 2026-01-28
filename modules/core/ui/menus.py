@@ -169,7 +169,7 @@ class MainMenu:
 
         if not auth.is_logged_in():
             request = current.request
-            login_next = URL(args=request.args, vars=request.vars)
+            login_next = URL(args=request.args, vars=request.get_vars)
             if request.controller == "default" and \
                request.function == "user" and \
                "_next" in request.get_vars:
@@ -1598,8 +1598,8 @@ class OptionsMenu:
         return M(c="vehicle")(
                     M("Vehicles", f="vehicle")(
                         M("Create", m="create"),
-                        M("Import", m="import", p="create"),
-                        M("Map", m="map"),
+                        # M("Import", m="import", p="create"),
+                        # M("Map", m="map"),
                     ),
                     M("Vehicle Types", f="vehicle_type")(
                         M("Create", m="create"),
