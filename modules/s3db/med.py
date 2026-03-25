@@ -30,10 +30,12 @@ __all__ = ("MedUnitModel",
            "MedVitalsModel",
            "MedTreatmentModel",
            "MedStatusModel",
+           "MedParameterModel",
            "MedAnamnesisModel",
            "MedEpicrisisModel",
            "MedMedicationModel",
            "MedVaccinationModel",
+           "med_PatientListLayout",
            "med_UnitRepresent",
            "med_DocEntityRepresent",
            "med_get_current_patient_id",
@@ -544,6 +546,8 @@ class MedPatientModel(DataModel):
                             med_status = "patient_id",
                             med_treatment = "patient_id",
                             med_vitals = "patient_id",
+                            med_sample = "patient_id",
+                            med_parameter_value = "patient_id",
                             med_epicrisis = {"joinby": "patient_id",
                                              "multiple": False,
                                              },
@@ -1081,6 +1085,295 @@ class MedStatusModel(DataModel):
             vhash = datahash(values)
             record.update_record(vhash=vhash)
 
+# =============================================================================
+class MedParameterModel(DataModel):
+    """ Data Model for medical parameters (e.g. lab results) """
+
+    names = ("med_parameter",
+             "med_parameter_group",
+             "med_parameter_value",
+             "med_sample",
+             "med_sample_type",
+             )
+
+    def model(self):
+
+        T = current.T
+        db = current.db
+        s3db = current.s3db
+
+        s3 = current.response.s3
+        crud_strings = s3.crud_strings
+
+        define_table = self.define_table
+
+        organisation_id = self.org_organisation_id
+        person_id = self.pr_person_id
+        patient_id = self.med_patient_id
+
+        # ---------------------------------------------------------------------
+        # Parameter Group
+        # - for grouping of results
+        #
+        tablename = "med_parameter_group"
+        define_table(tablename,
+                     organisation_id(),
+                     Field("name", notnull=True,
+                           label = T("Name"),
+                           requires = IS_NOT_EMPTY(),
+                           ),
+                     CommentsField(),
+                     )
+
+        # TODO import option
+        # TODO onvalidation to ensure uniqueness of name within organisation
+
+        # Foreign key template
+        represent = S3Represent(lookup=tablename)
+        parameter_group_id = FieldTemplate("parameter_group_id", "reference %s" % tablename,
+                                           label = T("Parameter Group"),
+                                           ondelete = "SET NULL",
+                                           represent = represent,
+                                           requires = IS_EMPTY_OR(
+                                                        IS_ONE_OF(db, "%s.id" % tablename,
+                                                                  represent,
+                                                                  )),
+                                           )
+
+        # CRUD Strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Parameter Group"),
+            title_display = T("Parameter Group"),
+            title_list = T("Parameter Groups"),
+            title_update = T("Edit Parameter Group"),
+            label_list_button = T("List Parameter Groups"),
+            label_delete_button = T("Delete Parameter Group"),
+            msg_record_created = T("Parameter Group added"),
+            msg_record_modified = T("Parameter Group updated"),
+            msg_record_deleted = T("Parameter Group deleted"),
+            msg_list_empty = T("No Parameter Groups currently defined"),
+            )
+
+        # ---------------------------------------------------------------------
+        # Sample Type
+        #
+        tablename = "med_sample_type"
+        define_table(tablename,
+                     # TODO name/code must be unique
+                     Field("name", notnull=True,
+                           label = T("Name"),
+                           requires = IS_NOT_EMPTY(),
+                           ),
+                     Field("code", notnull=True,
+                           label = T("Code"),
+                           requires = IS_NOT_EMPTY(),
+                           ),
+                     CommentsField("instructions",
+                                   label = T("Instructions"),
+                                   comment = None,
+                                   ),
+                     # TODO obsolete-field?
+                     CommentsField(),
+                     )
+
+        # TODO import deduplication primary=code+Name
+
+        # Foreign key template
+        represent = S3Represent(lookup=tablename)
+        sample_type_id = FieldTemplate("sample_type_id", "reference %s" % tablename,
+                                       label = T("Sample Type"),
+                                       ondelete = "RESTRICT",
+                                       represent = represent,
+                                       requires = IS_EMPTY_OR(
+                                                    IS_ONE_OF(db, "%s.id" % tablename,
+                                                              represent,
+                                                              )),
+                                       )
+
+        # CRUD Strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Sample Type"),
+            title_display = T("Sample Type"),
+            title_list = T("Sample Types"),
+            title_update = T("Edit Sample Type"),
+            label_list_button = T("List Sample Types"),
+            label_delete_button = T("Delete Sample Type"),
+            msg_record_created = T("Sample Type added"),
+            msg_record_modified = T("Sample Type updated"),
+            msg_record_deleted = T("Sample Type deleted"),
+            msg_list_empty = T("No Sample Types currently defined"),
+            )
+
+        # ---------------------------------------------------------------------
+        # Parameter
+        #
+        tablename = "med_parameter"
+        define_table(tablename,
+                     organisation_id(),
+                     parameter_group_id(),
+                     sample_type_id(),
+                     Field("name",
+                           label = T("Parameter"),
+                           requires = IS_NOT_EMPTY(),
+                           ),
+                     Field("abbrv",
+                           label = T("Abbreviation"),
+                           requires = IS_NOT_EMPTY(),
+                           ),
+                     Field("qualitative", "boolean",
+                           label = T("Qualitative"),
+                           default = False,
+                           ),
+                     Field("um",
+                           label = T("Unit of Measure"),
+                           ),
+                     Field("precsn", "integer",
+                           label = T("Precision"),
+                           default = 0,
+                           requires = IS_INT_IN_RANGE(minimum=0, maximum=4),
+                           ),
+                     # TODO options (JSON list (min/max) or (val, val, val))
+                     # TODO normal range (JSON list (min/max) or (val,val,val))
+                     # TODO obsolete-field?
+                     CommentsField("instructions",
+                                   label = T("Instructions"),
+                                   comment = None,
+                                   ),
+                     CommentsField(),
+                     )
+
+        # TODO onvalidation to ensure uniqueness of name/abbrv within organisation
+        # TODO inherit organisation_id from parameter group if using parameter groups
+
+        # Foreign key template
+        represent = S3Represent(lookup=tablename)
+        parameter_id = FieldTemplate("parameter_id", "reference %s" % tablename,
+                                     label = T("Parameter"),
+                                     ondelete = "RESTRICT",
+                                     represent = represent,
+                                     requires = IS_EMPTY_OR(
+                                                    IS_ONE_OF(db, "%s.id" % tablename,
+                                                              represent,
+                                                              )),
+                                     )
+
+        # CRUD Strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Add Parameter"),
+            title_display = T("Parameter"),
+            title_list = T("Parameters"),
+            title_update = T("Edit Parameter"),
+            label_list_button = T("List Parameters"),
+            label_delete_button = T("Delete Parameter"),
+            msg_record_created = T("Parameter added"),
+            msg_record_modified = T("Parameter updated"),
+            msg_record_deleted = T("Parameter deleted"),
+            msg_list_empty = T("No Parameters currently defined"),
+            )
+
+        # ---------------------------------------------------------------------
+        # Sample/Measurement
+        #
+        tablename = "med_sample"
+        define_table(tablename,
+                     patient_id(),
+                     person_id(comment=None),
+                     sample_type_id(),
+                     # sample number (autogenerate)?
+                     DateField(default="now"),
+                     # taken_by
+                     # invalid yes/no
+                     # vhash
+                     CommentsField(),
+                     )
+
+        # Components
+        self.add_components(tablename,
+                            med_parameter_value = "sample_id",
+                            )
+
+        # TODO automatically set patient/person IDs (onaccept)
+
+        # Foreign key template
+        represent = S3Represent(lookup=tablename, fields=("date",))
+        sample_id = FieldTemplate("sample_id", "reference %s" % tablename,
+                                  label = T("Sample"),
+                                  ondelete = "SET NULL",
+                                  represent = represent,
+                                  requires = IS_EMPTY_OR(
+                                                IS_ONE_OF(db, "%s.id" % tablename,
+                                                          represent,
+                                                          )),
+                                  )
+
+        # CRUD strings
+        crud_strings[tablename] = Storage(
+            label_create = T("Create Sample"),
+            title_display = T("Sample"),
+            title_list = T("Samples"),
+            title_update = T("Edit Sample"),
+            label_list_button = T("List Samples"),
+            label_delete_button = T("Delete Sample"),
+            msg_record_created = T("Sample created"),
+            msg_record_modified = T("Sample updated"),
+            msg_record_deleted = T("Sample deleted"),
+            msg_list_empty = T("No Samples currently registered"),
+            )
+
+        # ---------------------------------------------------------------------
+        # Measured/observed values
+        #
+        tablename = "med_parameter_value"
+        define_table(tablename,
+                     person_id(
+                         label = T("Patient"),
+                         empty = False,
+                         comment = None,
+                         readable = False,
+                         writable = False,
+                         ),
+                     patient_id(
+                         empty = False,
+                         readable = False,
+                         writable = False,
+                         ),
+                     sample_id(),
+                     parameter_id(empty=False),
+                     Field("value", "double",
+                           label = T("Result"),
+                           ),
+                     Field("value_qualitative",
+                           label = T("Result (qualitative)"),
+                           ),
+                     DateTimeField(label = T("Date reported"),
+                                   default = "now",
+                                   future = 0,
+                                   writable = False,
+                                   ),
+                     # TODO reported_by
+                     #DateTimeField("assessed_on"
+                     #              label = T("Date assessed"),
+                     #              ),
+                     # TODO assessed_by
+                     #DateTimeField("acknowledged_on",
+                     #              label = T("Date acknowledged"),
+                     #              ),
+                     # TODO acknowledged_by
+                     Field("invalid", "boolean",
+                           label = T("Invalid"),
+                           default = False,
+                           # TODO BooleanRepresent
+                           ),
+                     CommentsField(),
+                     # TODO vhash
+                     )
+
+        # TODO inherit person_id/patient_id from sample (onaccept),
+        #      alternatively, set patient_id/person_id automatically
+
+        # TODO CRUD Strings
+
+        # ---------------------------------------------------------------------
 # =============================================================================
 class MedVitalsModel(DataModel):
     """ Data Model for vital signs """
@@ -3087,6 +3380,291 @@ class med_StatusListLayout(S3DataListLayout):
         value = P(value,
                   _id = value_id,
                   _class = "dl-field-value")
+
+        return TAG[""](label, value)
+
+# =============================================================================
+class med_PatientListLayout(S3DataListLayout):
+    """ List layout for visits (on tab of person) """
+
+    def __init__(self, profile=None):
+
+        super().__init__(profile=profile)
+
+        T = current.T
+
+        self.list_fields = ["person_id",
+                            "unit_id",
+                            (T("Reason for visit"), "patient_link"),
+                            "refno",
+                            "date",
+                            "reason",
+                            "status",
+                            "hazards",
+                            "hazards_advice",
+                            ]
+        if current.auth.permission.has_permission("read", "med_epicrisis"):
+            self.list_fields.extend(["epicrisis.id",
+                                     "epicrisis.situation",
+                                     "epicrisis.diagnoses",
+                                     "epicrisis.progress",
+                                     "epicrisis.outcome",
+                                     "epicrisis.recommendation",
+                                     "epicrisis.is_final",
+                                     ])
+
+        self.patient_link = current.auth.permission.has_permission("read",
+                                                                   c="med",
+                                                                   f="patient",
+                                                                   t="med_patient",
+                                                                   )
+
+    # -------------------------------------------------------------------------
+    # def prep(self, resource, records):
+    #     """
+    #         Bulk lookups for cards
+    #
+    #         Args:
+    #             resource: the resource
+    #             records: the records as returned from CRUDResource.select
+    #     """
+    #
+    #     db = current.db
+    #     s3db = current.s3db
+    #
+    #     record_ids = [r["med_patient.id"] for r in records]
+    #
+    #     # Look up epicrises
+    #     etable = s3db.med_epicrisis
+    #     query = current.auth.s3_accessible_query("read", "med_epicrisis") & \
+    #             (etable.patient_id.belongs(record_ids)) & \
+    #             (etable.deleted == False)
+    #     rows = db(query).select(etable.id,
+    #                             etable.patient_id,
+    #                             etable.situation,
+    #                             etable.diagnoses,
+    #                             etable.progress,
+    #                             etable.outcome,
+    #                             etable.recommendation,
+    #                             etable.is_final,
+    #                             )
+    #     for row in rows:
+    #         self.epicrises[row.patient_id] = row
+    #
+    # -------------------------------------------------------------------------
+    def render_header(self, list_id, item_id, resource, rfields, record):
+        """
+            Render the card header
+
+            Args:
+                list_id: the HTML ID of the list
+                item_id: the HTML ID of the item
+                resource: the CRUDResource to render
+                rfields: the S3ResourceFields to render
+                record: the record as dict
+        """
+
+        header = DIV(_class="med-status-header")
+
+        # Show ref.no
+        if "med_patient.refno" in record:
+            header.append(DIV(SPAN(record["med_patient.refno"], _class="med-refno"), _class="meta"))
+
+        # Show date, hazard icons and status
+        for colname in ("med_patient.date",
+                        "med_patient.unit_id",
+                        "med_patient.status",
+                        "med_patient.hazards",
+                        ):
+            if colname not in record:
+                continue
+            content = DIV(record[colname], _class="meta")
+            if colname == "med_patient.unit_id":
+                content.add_class("meta-fix")
+            header.append(content)
+
+        # Render toolbox
+        toolbox = self.render_toolbox(list_id, resource, record)
+        if toolbox:
+            header.append(toolbox)
+
+        return header
+
+    # -------------------------------------------------------------------------
+    def render_body(self, list_id, item_id, resource, rfields, record):
+        """
+            Render the card body
+
+            Args:
+                list_id: the HTML ID of the list
+                item_id: the HTML ID of the item
+                resource: the CRUDResource to render
+                rfields: the S3ResourceFields to render
+                record: the record as dict
+        """
+
+        record_id = record["_row"]["med_patient.id"]
+
+        body = DIV(_class="med-status")
+        if record["_row"]["med_patient.status"] in ("ARRIVED", "TREATMENT"):
+            body.add_class("editable")
+
+        cols = {rfield.colname: rfield for rfield in rfields}
+
+        reason = "med_patient.patient_link" if self.patient_link else "med_patient.reason"
+        epicrisis = []
+
+        for colname in (reason,
+                        "med_patient.hazards_advice",
+                        "med_epicrisis.situation",
+                        "med_epicrisis.diagnoses",
+                        "med_epicrisis.progress",
+                        "med_epicrisis.outcome",
+                        "med_epicrisis.recommendation",
+                        ):
+            if colname not in cols:
+                continue
+            value = record["_row"][colname]
+            if isinstance(value, str):
+                value = value.strip()
+            if not value:
+                continue
+            rfield = cols[colname]
+            content = self.render_column(item_id, cols[colname], record)
+            if content:
+                if rfield.tname == "med_epicrisis":
+                    epicrisis.append(content)
+                else:
+                    body.append(content)
+
+        if epicrisis:
+            # Wrap epicrisis in DIV and add contents-toggle
+            T = current.T
+            content = DIV(*epicrisis,
+                          A(T("Show Details"), _class="action-lnk dl-toggle-contents"),
+                          A(T("Hide Details"), _class="action-lnk dl-toggle-contents hide"),
+                          _class = "med-epicrisis",
+                          )
+            body.append(content)
+
+        return body
+
+    # -------------------------------------------------------------------------
+    def render_toolbox(self, list_id, resource, record):
+        """
+            Render the toolbox
+
+            Args:
+                list_id: the HTML ID of the list
+                resource: the CRUDResource to render
+                record: the record as dict
+        """
+
+        table = resource.table
+        tablename = resource.tablename
+
+        raw = record["_row"]
+        record_id = raw["med_patient.id"]
+        person_id = raw["med_patient.person_id"]
+
+        toolbox = DIV(_class = "edit-bar fright")
+
+        # Look up the patient ID
+        f = current.request.function
+        if f == "person" and person_id:
+            update_url = URL(c = "med",
+                             f = "person",
+                             args = [person_id, "patient", record_id, "update.popup"],
+                             vars = {"refresh": list_id,
+                                     "record": record_id,
+                                     "profile": self.profile,
+                                     },
+                             )
+        elif f == "patient":
+            update_url = URL(c = "med",
+                             f = "patient",
+                             args = [record_id, "update.popup"],
+                             vars = {"refresh": list_id,
+                                     "record": record_id,
+                                     "profile": self.profile,
+                                     },
+                             )
+        else:
+            return None
+
+        has_permission = current.auth.s3_has_permission
+
+        if has_permission("update", table, record_id=record_id):
+            btn = A(ICON("edit"),
+                    _href = update_url,
+                    _class = "s3_modal",
+                    _title = get_crud_string(tablename, "title_update"),
+                    )
+            toolbox.append(btn)
+
+        if has_permission("delete", table, record_id=record_id):
+            btn = A(ICON("delete"),
+                    _class = "dl-item-delete",
+                    _title = get_crud_string(tablename, "label_delete_button"),
+                    )
+            toolbox.append(btn)
+
+        return toolbox
+
+    # ---------------------------------------------------------------------
+    def render_column(self, item_id, rfield, record):
+        """
+            Render a data column.
+
+            Args:
+                item_id: the HTML element ID of the item
+                rfield: the S3ResourceField for the column
+                record: the record (from CRUDResource.select)
+        """
+
+        colname = rfield.colname
+        if colname not in record:
+            return None
+
+        raw = record["_row"]
+
+        if colname in ("med_epicrisis.situation",
+                       "med_epicrisis.diagnoses",
+                       "med_epicrisis.progress",
+                       "med_epicrisis.outcome",
+                       "med_epicrisis.recommendation",
+                       "med_status.situation",
+                       ):
+            value = raw[colname]
+            if value:
+                value = value.strip()
+        else:
+            value = record[colname]
+
+        if not value:
+            return None
+
+        value_id = "%s-%s" % (item_id, rfield.colname.replace(".", "_"))
+
+        label = LABEL("%s:" % rfield.label,
+                      _for = value_id,
+                      _class = "dl-field-label",
+                      )
+
+        value = P(value,
+                  _id = value_id,
+                  _class = "dl-field-value",
+                  )
+
+        if rfield.tname == "med_epicrisis":
+            # Hide epicrisis details initially
+            label.add_class("hide")
+            value.add_class("hide")
+            # Mark as preliminary if not final yet
+            if not raw.get("med_epicrisis.is_final"):
+                value.add_class("med-preliminary")
+        if colname in ("med_patient.reason", "med_patient.patient_link"):
+            value.add_class("med-reason")
 
         return TAG[""](label, value)
 

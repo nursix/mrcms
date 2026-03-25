@@ -6,9 +6,10 @@
 
 import datetime
 
-from gluon import current, A
+from gluon import current, URL, DIV, A
 
-from core import CustomForm, FS, ICON
+from core import CustomForm, FS, ICON, get_crud_string
+from s3db.med import med_PatientListLayout
 
 RECENTLY=12 # hours
 
@@ -152,6 +153,7 @@ def configure_med_case_file(r):
             reason = (T("Reason for visit"), "patient_link")
         else:
             reason = "reason"
+
         list_fields = ["date",
                        "refno",
                        reason,
@@ -163,12 +165,15 @@ def configure_med_case_file(r):
         component.configure(crud_form = crud_form,
                             subheadings = subheadings,
                             list_fields = list_fields,
+                            list_layout = mrcms_PatientListLayout(),
                             orderby = "%s.date desc" % r.component.tablename,
                             insertable = not current_patient_id,
                             editable = True,
                             deletable = False,
                             open_read_first = True,
                             )
+        if auth.permission.has_permission("read", c="med", f="epicrisis"):
+            r.component.configure(list_type="datalist")
 
     elif component_name == "vitals":
         # Require active patient file for adding new record
@@ -316,5 +321,81 @@ def med_patient_controller(**attr):
     s3.postp = postp
 
     return attr
+
+# =============================================================================
+class mrcms_PatientListLayout(med_PatientListLayout):
+
+    def render_toolbox(self, list_id, resource, record):
+        """
+            Render the toolbox
+
+            Args:
+                list_id: the HTML ID of the list
+                resource: the CRUDResource to render
+                record: the record as dict
+        """
+
+        T = current.T
+
+        table = resource.table
+        tablename = resource.tablename
+
+        raw = record["_row"]
+        record_id = raw["med_patient.id"]
+        person_id = raw["med_patient.person_id"]
+
+        f = current.request.function
+        if f == "person" and person_id:
+            update_url = URL(c = "med",
+                             f = "person",
+                             args = [person_id, "patient", record_id, "update.popup"],
+                             vars = {"refresh": list_id,
+                                     "record": record_id,
+                                     "profile": self.profile,
+                                     },
+                             )
+        elif f == "patient":
+            update_url = URL(c = "med",
+                             f = "patient",
+                             args = [record_id, "update.popup"],
+                             vars = {"refresh": list_id,
+                                     "record": record_id,
+                                     "profile": self.profile,
+                                     },
+                             )
+        else:
+            return None
+
+        toolbox = DIV(_class = "edit-bar fright")
+
+        if raw.get("med_epicrisis.id"):
+            btn = A(ICON("file-pdf"),
+                    data = {"url": URL(c = "med",
+                                       f = "patient",
+                                       args = [record_id, "summarize.pdf"],
+                                       ),
+                            },
+                    _class = "s3-download-button",
+                    _title = T("Summary"),
+                    )
+            toolbox.append(btn)
+
+        has_permission = current.auth.s3_has_permission
+        if has_permission("update", table, record_id=record_id):
+            btn = A(ICON("edit"),
+                    _href = update_url,
+                    _class = "s3_modal",
+                    _title = get_crud_string(tablename, "title_update"),
+                    )
+            toolbox.append(btn)
+
+        if has_permission("delete", table, record_id=record_id):
+            btn = A(ICON("delete"),
+                    _class = "dl-item-delete",
+                    _title = get_crud_string(tablename, "label_delete_button"),
+                    )
+            toolbox.append(btn)
+
+        return toolbox
 
 # END =========================================================================

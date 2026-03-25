@@ -440,6 +440,7 @@ def person():
                 reason = (T("Reason for visit"), "patient_link")
             else:
                 reason = "reason"
+
             list_fields = ["date",
                            "refno",
                            reason,
@@ -451,10 +452,13 @@ def person():
             r.component.configure(crud_form = crud_form,
                                   subheadings = subheadings,
                                   list_fields = list_fields,
+                                  list_layout = s3db.med_PatientListLayout(),
                                   orderby = "%s.date desc" % r.component.tablename,
                                   insertable = not patient_id,
                                   deletable = False,
                                   )
+            if current.auth.permission.has_permission("read", c="med", f="epicrisis"):
+                r.component.configure(list_type="datalist")
 
         elif component_name == "vitals":
             # Require active patient file for adding new record
@@ -625,6 +629,24 @@ def document():
     return crud_controller("doc", "document",
                            rheader = s3db.med_rheader,
                            )
+
+# =============================================================================
+# Observations and Measurements
+#
+def parameter_group():
+    """ Parameter Groups - CRUD Controller """
+
+    return crud_controller()
+
+def sample_type():
+    """ Sample Types - CRUD Controller """
+
+    return crud_controller()
+
+def parameter():
+    """ Parameters - CRUD Controller """
+
+    return crud_controller()
 
 # =============================================================================
 # Vaccinations
