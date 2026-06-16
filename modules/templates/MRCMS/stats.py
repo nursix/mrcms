@@ -622,7 +622,7 @@ class PerformanceIndicatorsBAMF(PerformanceIndicators):
 
         nationalities = ("SY", "AF", "TR", "GE", "IR", "IQ", "RU",
                          "MK", "VE", "SO", "ER", "DZ", "CO", "TN",
-                         "NG", "??", "IN", "PK", "EG", "RS", "*"
+                         "NG", "??", "IN", "PK", "EG", "RS", "*",
                          )
 
         s3db = current.s3db
