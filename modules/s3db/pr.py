@@ -246,13 +246,6 @@ class PRPersonEntityModel(DataModel):
                                      #    "contact_method": "WORK_PHONE",
                                      #    },
                                      # },
-                                     # Facebook:
-                                     {"name": "facebook",
-                                      "joinby": pe_id,
-                                      "filterby": {
-                                          "contact_method": "FACEBOOK",
-                                          },
-                                      },
                                      ),
                        pr_contact_emergency = pe_id,
                        pr_contact_person = pe_id,
@@ -1161,8 +1154,9 @@ class PRPersonModel(DataModel):
                        med_status = {"name": "med_status",
                                      "joinby": "person_id",
                                      },
-                       med_sample = "person_id",
-                       med_parameter_value = "person_id",
+                       med_analysis = {"name": "med_analysis",
+                                       "joinby": "person_id",
+                                       },
                        med_treatment = "person_id",
 
                        # Seized Items (owner)
@@ -3622,7 +3616,7 @@ class PRContactModel(DataModel):
                            readable = False,
                            writable = False,
                            ),
-                     # Used to determine whether an RSS/Facebook feed should be imported into the main newsfeed
+                     # Used to determine whether an RSS feed should be imported into the main newsfeed
                      # (usually used for Organisational ones)
                      Field("poll", "boolean",
                            default = False,
@@ -6636,16 +6630,7 @@ class pr_ContactRepresent(S3Represent):
         if not k:
             return v
 
-        if v.startswith("http"):
-            return A(v, _href=v)
-
-        contact_method = row.contact_method
-        if contact_method == "FACEBOOK":
-            url = "http://%s" % v
-            return A(v, _href=url)
-        else:
-            # No link
-            return v
+        return A(v, _href=v) if v.startswith("http") else v
 
     # -------------------------------------------------------------------------
     def represent_row(self, row):
@@ -7350,7 +7335,6 @@ class pr_Contacts(CRUDMethod):
                 "HOME_PHONE": 4,
                 "SKYPE": 5,
                 "RADIO": 6,
-                "FACEBOOK": 8,
                 "WHATSAPP": 9,
                 "FAX": 10,
                 "OTHER": 11,
@@ -9193,8 +9177,6 @@ def pr_contact_list_layout(list_id, item_id, resource, rfields, record):
         icon = "mail"
     elif contact_method == "SKYPE":
         icon = "skype"
-    elif contact_method == "FACEBOOK":
-        icon = "facebook"
     elif contact_method == "RADIO":
         icon = "microphone"
     elif contact_method == "RSS":

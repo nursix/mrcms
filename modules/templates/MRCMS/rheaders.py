@@ -157,14 +157,12 @@ def dvr_rheader(r, tabs=None):
                                         "dvr_case.archived",
                                         "dvr_case.reference",
                                         "dvr_case.household_size",
-                                        #"dvr_case.transferable",
                                         "dvr_case.last_seen_on",
                                         "first_name",
                                         "last_name",
                                         "person_details.nationality",
                                         "shelter_registration.shelter_id",
                                         "shelter_registration.shelter_unit_id",
-                                        #"absence",
                                         ],
                                         represent = True,
                                         raw_data = True,
@@ -204,8 +202,11 @@ def dvr_rheader(r, tabs=None):
                     # Target record exists, but doesn't match filters
                     return None
 
+                # TODO hide restricted fields for non-privileged roles
+                # TODO include case organisation for users with cross-org permissions
+
                 rheader_fields = [[(T("ID"), "pe_label"),
-                                   (T("Principal Ref.No."), case_reference),
+                                   (T("Principal Ref.No."), case_reference),    # TODO restricted
                                    (T("Shelter"), shelter),
                                    ],
                                   ["date_of_birth",
@@ -213,8 +214,8 @@ def dvr_rheader(r, tabs=None):
                                    (T("Housing Unit"), unit),
                                    ],
                                   [(T("Nationality"), nationality),
-                                   (T("Size of Family"), household_size),
-                                   (T("Last seen on"), last_seen_on),
+                                   (T("Size of Family"), household_size),       # TODO restricted
+                                   (T("Last seen on"), last_seen_on),           # TODO restricted
                                    ],
                                   ]
 

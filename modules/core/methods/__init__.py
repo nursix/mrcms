@@ -6,6 +6,7 @@ from .colmgr import *
 from .crud import *
 from .checkpoint import Checkpoint
 from .distribution import Distribution
+from .dseries import *
 from .filtermgr import *
 from .gendoc import GenerateDocument
 from .grouped import *
@@ -25,4 +26,3 @@ from .ssi import SpreadsheetImporter
 from .summary import *
 from .timeplot import *
 from .xforms import *
-
