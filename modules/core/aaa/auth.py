@@ -152,6 +152,7 @@ class AuthS3(AccountLockingMixin, Auth):
         settings.login_userfield = "email"
         if log_failed_logins is True: # rather than "VALIDONLY"
             settings.log_all_failed_logins = True
+        settings.login_alt = True
 
         settings.lock_keys = True
 
@@ -1252,6 +1253,49 @@ Thank you"""
                                                   timestmp = request.utcnow)
 
     # -------------------------------------------------------------------------
+    def login_user_alt(self):
+        """
+            Try to login the user using header-based authentication methods:
+                - MasterKeyAuth
+                - HTTPBasicAuth
+
+            Returns:
+                True|False whether this succeeded
+
+            Notes:
+                - this should only run once per AuthS3 instance, as there is
+                  no point to try again once these methods have failed
+                - alternative auth methods will implicitly call s3_set_roles
+                  if successful
+                - MUST NOT send an HTTP-401 challenge here because otherwise,
+                  negative tests (e.g. if not auth.s3_logged_in()) would always
+                  challenge, and never succeed
+                    => omit basic_auth_realm
+                    => send the challenge in permission.fail() instead
+        """
+
+        if not self.settings.login_alt:
+            return False
+
+        # This should be tried only once per request cycle
+        self.settings.login_alt = False
+
+        # Probe for Master Key Auth
+        if current.deployment_settings.get_auth_masterkey():
+            success = self.s3_masterkey_login()
+            if success is not None:
+                return success
+
+        # Basic Auth (default)
+        try:
+            basic = self.basic()
+        except binascii.Error:
+            # Credentials present but encoded incorrectly
+            return False
+
+        return basic[2] # accepted True|False
+
+    # -------------------------------------------------------------------------
     def consent(self):
         """
             Consent question form, e.g.
@@ -1630,8 +1674,8 @@ $('form.auth_consent').submit(S3ClearNavigateAwayConfirm);''')
                 if not settings.mailer or \
                    not settings.mailer.settings.server or \
                    not settings.mailer.send(to = form.vars.email,
-                                            subject = messages.verify_email_subject % system,
-                                            message = messages.verify_email % system,
+                                            subject = str(messages.verify_email_subject % system),
+                                            message = str(messages.verify_email % system),
                                             ):
                     current.response.error = messages.email_verification_failed
                     return form
@@ -1692,8 +1736,8 @@ $('form.auth_consent').submit(S3ClearNavigateAwayConfirm);''')
 
         message = self.messages.reset_password % {"url": reset_password_url}
         if mailer.send(to = user.email,
-                       subject = self.messages.reset_password_subject,
-                       message = message):
+                       subject = str(self.messages.reset_password_subject),
+                       message = str(message)):
             user.update_record(reset_password_key = reset_password_key)
             return True
 
@@ -3574,7 +3618,7 @@ Please go to %(url)s to approve this user."""
             if customise:
                 request = CRUDRequest("hrm", "human_resource",
                                       current.request,
-                                      args = [str(hr_id)] if accepted=="update" else None,
+                                      args = [str(hr_id)] if accepted=="update" else [],
                                       )
                 customise(request, htablename)
             s3db.onaccept(htablename, record, method=accepted)
@@ -3912,35 +3956,12 @@ Please go to %(url)s to approve this user."""
     def s3_logged_in(self):
         """
             Check whether the user is currently logged-in
-            - tries Basic if not
         """
 
         if self.override:
             return True
 
-        if not self.is_logged_in():
-            # NB MUST NOT send an HTTP-401 challenge here because otherwise,
-            #    negative tests (e.g. if not auth.s3_logged_in()) would always
-            #    challenge, and never succeed
-            #    => omit basic_auth_realm
-            #    => send the challenge in permission.fail() instead
-
-            # Probe for Master Key Auth
-            if current.deployment_settings.get_auth_masterkey():
-                success = self.s3_masterkey_login()
-                if success is not None:
-                    return success
-
-            # Basic Auth (default)
-            try:
-                basic = self.basic()
-            except binascii.Error:
-                # Credentials present but encoded incorrectly
-                return False
-
-            return basic[2] # accepted True|False
-
-        return True
+        return self.is_logged_in() or self.login_user_alt()
 
     # -------------------------------------------------------------------------
     # Role Management
@@ -4052,10 +4073,18 @@ Please go to %(url)s to approve this user."""
             return None
 
     # -------------------------------------------------------------------------
-    def s3_set_roles(self):
-        """ Update pe_id, roles and realms for the current user """
+    def s3_set_roles(self, login_alt=False):
+        """
+            Update pe_id, roles and realms for the current user
+
+            Args:
+                login_alt: trigger alternative authentication methods
+        """
 
         session = current.session
+
+        if not self.user and login_alt and self.login_user_alt():
+            return
 
         s3 = current.response.s3
         if "restricted_tables" in s3:

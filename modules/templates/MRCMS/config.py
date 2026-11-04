@@ -38,6 +38,7 @@ def config(settings):
                                       ("counsel", "response_type"): ("dvr", "response_type"),
                                       ("counsel", "response_theme"): ("dvr", "response_theme"),
                                       ("counsel", "vulnerability_type"): ("dvr", "vulnerability_type"),
+                                      ("cr", "shelter_commission_demographic"): ("cr", "shelter_commission_demographic"),
                                       ("supply", "person"): ("pr", "person"),
                                       }
 
@@ -184,6 +185,7 @@ def config(settings):
                                       "QUARTERMASTER": "ADMIN",
                                       "JANITOR": "ADMIN",
                                       "CHECKPOINT": "ADMIN",
+                                      "SHELTER_REPORTER": "ADMIN",
                                       }
 
     settings.auth.realm_entity = realm_entity
@@ -236,7 +238,6 @@ def config(settings):
     # -------------------------------------------------------------------------
     # CR Settings
     #
-    settings.cr.shelter_population_dynamic = True
     settings.cr.shelter_units = True
     settings.cr.shelter_blocked_capacity = True
 

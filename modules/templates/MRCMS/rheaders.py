@@ -393,12 +393,16 @@ def cr_rheader(r, tabs=None):
 
             if not tabs:
                 tabs = [(T("Basic Details"), None, {}, "read"),
-                        (T("Overview"), "overview"),
+                        #(T("Overview"), "overview"),
                         (T("Housing Units"), "shelter_unit"),
                         (T("Journal"), "shelter_note"),
                         (T("Images"), "image"),
+                        (T("Commissions"), "shelter_commission"),
                         (T("Documents"), "document"),
                         ]
+                from .shelter import ShelterOverview
+                if ShelterOverview.permitted():
+                    tabs.insert(1, (T("Overview"), "overview"))
 
             rheader_fields = [["organisation_id",
                                ],

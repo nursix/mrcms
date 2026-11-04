@@ -1347,19 +1347,22 @@ class FinVoucherModel(DataModel):
                                        )
             else:
                 # Schedule task
+                pvars = {"billing_id": billing.id}
+                try:
+                    pvars["user_id"] = current.auth.user.id
+                except AttributeError:
+                    pass
+
                 scheduler = current.s3task.scheduler
-                application = "%s/default" % current.request.application
                 task = scheduler.queue_task("s3db_task",
                                             pargs = ["fin_voucher_start_billing"],
-                                            pvars = {"billing_id": billing.id},
-                                            application_name = application,
+                                            pvars = pvars,
                                             start_time = start,
                                             stop_time = None,
                                             timeout = 1800,
                                             repeats = 1,
                                             )
-                if task:
-                    task_id = task.id
+                task_id = task["id"]
 
         elif task and task.status == "QUEUED":
             # Remove the task
@@ -3741,6 +3744,8 @@ def fin_voucher_eligibility_types(program_ids, organisation_ids=None):
                                 groupby = ltable.organisation_type_id,
                                 )
         issuer_types = [row.organisation_type_id for row in rows]
+    else:
+        issuer_types = []
 
     ttable = s3db.fin_voucher_eligibility_type
     query = (ttable.program_id.belongs(program_ids)) & \
